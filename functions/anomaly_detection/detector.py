@@ -27,6 +27,14 @@ MIN_BASELINE_READINGS = 12
 RATE_WINDOW_MINUTES = 30
 TEMP_RATE_DELTA_C = 2.0
 
+DEFAULT_ANOMALY_CONFIG = {
+    "humidityWarning": 85.0,
+    "humidityCritical": 90.0,
+    "gasCriticalMultiplier": 1.5,
+    "temperatureRateDelta": TEMP_RATE_DELTA_C,
+    "temperatureCriticalDelta": 4.0,
+}
+
 SENSOR_COLUMNS = {
     "temperature": "Temperature",
     "humidity": "Humidity",
@@ -51,7 +59,11 @@ class AnomalyEvent:
     severity: str
 
 
-def detect_anomalies(reading: dict[str, Any], history: pd.DataFrame) -> list[AnomalyEvent]:
+def detect_anomalies(
+    reading: dict[str, Any],
+    history: pd.DataFrame,
+    anomaly_config: dict[str, Any] | None = None,
+) -> list[AnomalyEvent]:
     """Return all anomaly events for the latest reading.
 
     `history` should include the latest reading and be ordered by ReadingAt.
@@ -67,30 +79,47 @@ def detect_anomalies(reading: dict[str, Any], history: pd.DataFrame) -> list[Ano
     baseline = history[history["ReadingAt"] < current_at]
     rolling = baseline[baseline["ReadingAt"] >= current_at - pd.Timedelta(hours=ROLLING_HOURS)]
 
+    config = {**DEFAULT_ANOMALY_CONFIG, **(anomaly_config or {})}
+
     events: list[AnomalyEvent] = []
-    events.extend(_threshold_anomalies(reading))
+    events.extend(_threshold_anomalies(reading, config))
     events.extend(_statistical_anomalies(reading, rolling))
-    rate_event = _rate_of_change_anomaly(reading, baseline)
+    rate_event = _rate_of_change_anomaly(reading, baseline, config)
     if rate_event is not None:
         events.append(rate_event)
     events.extend(_binary_trigger_anomalies(reading))
     return _dedupe(events)
 
 
-def _threshold_anomalies(reading: dict[str, Any]) -> list[AnomalyEvent]:
+def _threshold_anomalies(reading: dict[str, Any], config: dict[str, Any]) -> list[AnomalyEvent]:
     events: list[AnomalyEvent] = []
     product_type = str(reading["ProductType"]).lower()
     cfg = PRODUCT_CONFIG[product_type]
 
     temp = float(reading["Temperature"])
     safe_temp = cfg["safe_temp"]
+    temperature_critical_delta = float(config.get("temperatureCriticalDelta", DEFAULT_ANOMALY_CONFIG["temperatureCriticalDelta"]))
     if temp > safe_temp:
-        events.append(_event(reading, "temperature", temp, None, None, None, "threshold", _temp_severity(temp - safe_temp)))
+        events.append(
+            _event(
+                reading,
+                "temperature",
+                temp,
+                None,
+                None,
+                None,
+                "threshold",
+                _temp_severity(temp - safe_temp, temperature_critical_delta),
+            )
+        )
 
     humidity = float(reading["Humidity"])
-    if humidity >= 90.0:
+    humidity_warning = float(config.get("humidityWarning", DEFAULT_ANOMALY_CONFIG["humidityWarning"]))
+    humidity_critical = float(config.get("humidityCritical", DEFAULT_ANOMALY_CONFIG["humidityCritical"]))
+    gas_critical_multiplier = float(config.get("gasCriticalMultiplier", DEFAULT_ANOMALY_CONFIG["gasCriticalMultiplier"]))
+    if humidity >= humidity_critical:
         events.append(_event(reading, "humidity", humidity, None, None, None, "threshold", "CRITICAL"))
-    elif humidity >= 85.0:
+    elif humidity >= humidity_warning:
         events.append(_event(reading, "humidity", humidity, None, None, None, "threshold", "WARNING"))
 
     gas_limits = {
@@ -103,7 +132,7 @@ def _threshold_anomalies(reading: dict[str, Any]) -> list[AnomalyEvent]:
         column = SENSOR_COLUMNS[sensor]
         value = float(reading[column])
         if value >= limit:
-            severity = "CRITICAL" if value >= limit * 1.5 else "WARNING"
+            severity = "CRITICAL" if value >= limit * gas_critical_multiplier else "WARNING"
             events.append(_event(reading, sensor, value, None, None, None, "threshold", severity))
 
     return events
@@ -132,7 +161,11 @@ def _statistical_anomalies(reading: dict[str, Any], rolling: pd.DataFrame) -> li
     return events
 
 
-def _rate_of_change_anomaly(reading: dict[str, Any], baseline: pd.DataFrame) -> AnomalyEvent | None:
+def _rate_of_change_anomaly(
+    reading: dict[str, Any],
+    baseline: pd.DataFrame,
+    config: dict[str, Any],
+) -> AnomalyEvent | None:
     if baseline.empty:
         return None
 
@@ -145,10 +178,11 @@ def _rate_of_change_anomaly(reading: dict[str, Any], baseline: pd.DataFrame) -> 
     previous_temp = float(prior.iloc[0]["Temperature"])
     current_temp = float(reading["Temperature"])
     delta = current_temp - previous_temp
-    if delta <= TEMP_RATE_DELTA_C:
+    rate_delta = float(config.get("temperatureRateDelta", DEFAULT_ANOMALY_CONFIG["temperatureRateDelta"]))
+    if delta <= rate_delta:
         return None
 
-    severity = "CRITICAL" if delta >= TEMP_RATE_DELTA_C * 2 else "WARNING"
+    severity = "CRITICAL" if delta >= rate_delta * 2 else "WARNING"
     return _event(reading, "temperature", current_temp, previous_temp, None, delta, "rate_of_change", severity)
 
 
@@ -190,8 +224,8 @@ def _event(
     )
 
 
-def _temp_severity(delta_c: float) -> str:
-    if delta_c >= 4.0:
+def _temp_severity(delta_c: float, critical_delta: float) -> str:
+    if delta_c >= critical_delta:
         return "CRITICAL"
     return "WARNING"
 

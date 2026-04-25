@@ -58,6 +58,13 @@ def load_data() -> pd.DataFrame:
     return build_feature_matrix(labels, readings)
 
 
+def build_training_frame(labels: pd.DataFrame, readings: pd.DataFrame) -> pd.DataFrame:
+    df = build_feature_matrix(labels, readings)
+    if df.empty:
+        raise ValueError("No labelled batches with sensor history were available for training")
+    return df
+
+
 def train_classifier(X: np.ndarray, y: np.ndarray) -> tuple[LGBMClassifier, float]:
     skf = StratifiedKFold(n_splits=N_SPLITS, shuffle=True, random_state=RANDOM_STATE)
     aucs = []
@@ -130,8 +137,12 @@ def benchmark_inference(onnx_path: Path, n_features: int, runs: int = 200) -> fl
     return elapsed
 
 
-def main() -> None:
-    df = load_data()
+def train_and_export(
+    df: pd.DataFrame,
+    model_dir: Path = MODEL_DIR,
+    model_version: str = MODEL_VERSION,
+    metadata_extra: dict[str, object] | None = None,
+) -> dict[str, object]:
     print(f"Feature matrix: {df.shape[0]} rows × {len(FEATURE_COLUMNS)} features")
     print(f"Spoilage rate: {df['WasSpoiled'].mean():.1%}")
 
@@ -146,9 +157,9 @@ def main() -> None:
     reg, cv_mae = train_regressor(X, y_reg)
 
     print("\n== Exporting ONNX ==")
-    MODEL_DIR.mkdir(parents=True, exist_ok=True)
-    cls_path = MODEL_DIR / "spoilage_classifier.onnx"
-    reg_path = MODEL_DIR / "shelf_life_regressor.onnx"
+    model_dir.mkdir(parents=True, exist_ok=True)
+    cls_path = model_dir / "spoilage_classifier.onnx"
+    reg_path = model_dir / "shelf_life_regressor.onnx"
     export_onnx(cls, X.shape[1], cls_path)
     export_onnx(reg, X.shape[1], reg_path)
     print(f"  wrote {cls_path}")
@@ -160,8 +171,8 @@ def main() -> None:
     print(f"  classifier: {cls_ms:.2f} ms / call")
     print(f"  regressor:  {reg_ms:.2f} ms / call")
 
-    metadata = {
-        "model_version": MODEL_VERSION,
+    metadata: dict[str, object] = {
+        "model_version": model_version,
         "trained_at": pd.Timestamp.now("UTC").isoformat(),
         "feature_columns": FEATURE_COLUMNS,
         "product_config": {k: v for k, v in PRODUCT_CONFIG.items()},
@@ -180,20 +191,38 @@ def main() -> None:
             "regressor_onnx": reg_path.name,
         },
     }
-    meta_path = MODEL_DIR / "model_metadata.json"
+    if metadata_extra:
+        metadata.update(metadata_extra)
+
+    meta_path = model_dir / "model_metadata.json"
     meta_path.write_text(json.dumps(metadata, indent=2))
     print(f"  wrote {meta_path}")
 
     print("\n== Acceptance checks ==")
     checks = [
         ("classifier CV ROC-AUC > 0.80", cv_auc > 0.80, f"{cv_auc:.4f}"),
-        ("regressor CV MAE < 12h",        cv_mae < 12.0, f"{cv_mae:.2f}h"),
-        ("classifier inference < 50ms",   cls_ms < 50,   f"{cls_ms:.2f}ms"),
-        ("regressor inference < 50ms",    reg_ms < 50,   f"{reg_ms:.2f}ms"),
+        ("regressor CV MAE < 12h", cv_mae < 12.0, f"{cv_mae:.2f}h"),
+        ("classifier inference < 50ms", cls_ms < 50, f"{cls_ms:.2f}ms"),
+        ("regressor inference < 50ms", reg_ms < 50, f"{reg_ms:.2f}ms"),
     ]
     for name, passed, value in checks:
         flag = "PASS" if passed else "FAIL"
         print(f"  [{flag}] {name}: {value}")
+
+    return {
+        "model_version": model_version,
+        "batch_count": int(df.shape[0]),
+        "cv_metrics": metadata["cv_metrics"],
+        "inference_ms": metadata["inference_ms"],
+        "artefacts": metadata["artefacts"],
+        "metadata_path": str(meta_path),
+        "checks": [{"name": name, "passed": passed, "value": value} for name, passed, value in checks],
+    }
+
+
+def main() -> None:
+    df = load_data()
+    train_and_export(df)
 
 
 if __name__ == "__main__":

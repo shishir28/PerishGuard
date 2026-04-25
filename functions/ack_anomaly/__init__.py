@@ -10,7 +10,12 @@ try:
 except ModuleNotFoundError:
     func = None
 
-from functions.ops_service import OperationsService
+try:
+    from functions.auth_service import require_session
+    from functions.ops_service import OperationsService
+except ModuleNotFoundError:
+    from auth_service import require_session
+    from ops_service import OperationsService
 
 
 _SERVICE: OperationsService | None = None
@@ -25,13 +30,14 @@ def _service() -> OperationsService:
 
 def main(req: "func.HttpRequest") -> "func.HttpResponse":
     try:
+        context = require_session(req)
         event_id = int(req.route_params.get("eventId", "0"))
-        body = req.get_json()
-        customer_id = str(body.get("customerId", "")).strip()
-        if event_id <= 0 or not customer_id:
-            return _json({"error": "eventId route param and customerId are required"}, 400)
-        result = _service().acknowledge_anomaly(customer_id, event_id)
+        if event_id <= 0:
+            return _json({"error": "eventId route param is required"}, 400)
+        result = _service().acknowledge_anomaly(context.active_customer_id, event_id)
         return _json(result, 200)
+    except PermissionError as exc:
+        return _json({"error": str(exc)}, 401)
     except ValueError as exc:
         return _json({"error": str(exc)}, 400)
     except LookupError as exc:

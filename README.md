@@ -15,7 +15,9 @@ Implemented locally:
 - Bootstrap tooling to load seeded SQLite demo data into PostgreSQL.
 - Real Slack webhook and SMTP email alert delivery with per-channel alert audit logging.
 - Batch drill-down, anomaly acknowledgment, and model-performance dashboard views.
-- React + Vite + Recharts dashboard with Nginx proxying to Azure Functions.
+- Session auth, per-customer dashboard scoping, and seeded demo users.
+- Geospatial route-risk map, runtime threshold/alert configuration UI, and model retraining from PostgreSQL labels.
+- React + Vite + Recharts dashboard, branded as PerishGuard Pulse, with Nginx proxying to Azure Functions.
 - Docker assets for PostgreSQL, Azurite, Azure Functions, dashboard, training, and demo tooling.
 
 Validation completed:
@@ -43,11 +45,13 @@ Validation completed:
 - `functions/predict_spoilage/` is the core prediction pipeline for IoT-triggered telemetry. `functions/ingest_reading/` exposes the same pipeline over HTTP for local demos and synthetic producers.
 - `functions/anomaly_detection/` runs deterministic checks on thresholds, statistical deviation, temperature rate-of-change, and shock/light triggers before prediction is finalized.
 - `functions/nemoclaw_dispatch/` converts prediction plus anomaly context into alert copy, optional NemoClaw task dispatch, Slack/email delivery, and per-channel alert audit logging.
-- `functions/nl_query/` powers the dashboard cards and chat with customer-scoped PostgreSQL `SELECT` queries, statement timeouts, and deterministic fallbacks when Ollama is unavailable.
+- `functions/nl_query/` powers the dashboard cards and chat with session-scoped PostgreSQL `SELECT` queries, statement timeouts, and deterministic fallbacks when Ollama is unavailable.
 - `functions/ack_anomaly/`, `functions/batch_detail/`, and `functions/model_performance/` expose operational write/read APIs for acknowledgment, batch drill-down, and prediction-vs-truth reporting.
+- `functions/login/`, `functions/session/`, `functions/logout/`, and `functions/switch_customer/` provide lightweight local auth and customer switching for the dashboard.
+- `functions/customer_settings_api/`, `functions/route_overview/`, and `functions/model_training/` expose customer config, route map data, and retraining controls.
 - `functions/analytics_batch/` generates weekly JSON reports from shipment labels and latest risk summaries, while `functions/run_analytics/` exposes the same batch service through `POST /api/run-analytics`.
 - `infra/seed_postgres_from_sqlite.py` loads the seeded SQLite demo dataset into PostgreSQL, and `infra/synthetic_generator.py` emits realistic telemetry into `/api/ingest-reading`.
-- `dashboard/` now renders live risk, telemetry, anomaly acknowledgment, batch drill-down, model performance, and chat views from API responses.
+- `dashboard/` now renders PerishGuard Pulse: login/session state, customer-scoped risk and telemetry, route maps, threshold tuning, retraining controls, anomaly acknowledgment, batch drill-down, model performance, and chat views from API responses.
 
 ## Layout
 
@@ -68,6 +72,13 @@ PerishGuard/
 │   ├── ack_anomaly/                 # HTTP acknowledgment endpoint
 │   ├── batch_detail/                # HTTP batch drill-down endpoint
 │   ├── model_performance/           # HTTP model-performance endpoint
+│   ├── login/                       # Session login endpoint
+│   ├── session/                     # Current session endpoint
+│   ├── logout/                      # Session logout endpoint
+│   ├── switch_customer/             # Active-customer switch endpoint
+│   ├── customer_settings_api/       # Runtime threshold and alert settings endpoint
+│   ├── route_overview/              # Geospatial route-risk summary endpoint
+│   ├── model_training/              # Retraining endpoint and run history
 │   ├── analytics_batch/             # Task 5 timer endpoint
 │   └── run_analytics/               # HTTP trigger for on-demand analytics
 ├── dashboard/                       # React dashboard and Nginx packaging
@@ -108,6 +119,8 @@ docker compose --profile tools run --rm demo-tools python infra/synthetic_genera
 Dashboard URL in Docker: `http://localhost:8081`.
 
 Alert channels are optional and configured through `.env` with `SLACK_WEBHOOK_URL` and SMTP settings such as `SMTP_HOST`, `ALERT_EMAIL_FROM`, and `ALERT_EMAIL_TO`.
+
+Demo dashboard logins are seeded into PostgreSQL. Use `admin@perishguard.local` for cross-customer access or `ops+c010@perishguard.local` for a single-customer session. The demo password is `perishguard-demo`.
 
 ## Documentation
 

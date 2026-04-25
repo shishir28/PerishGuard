@@ -10,6 +10,11 @@ try:
 except ModuleNotFoundError:
     psycopg = None
 
+try:
+    from functions.customer_settings import CustomerSettingsService
+except ModuleNotFoundError:
+    from customer_settings import CustomerSettingsService
+
 
 def _connection_string() -> str:
     return os.environ["SQL_CONNECTION_STRING"]
@@ -32,6 +37,7 @@ class OperationsService:
 
     def __init__(self, connection_string: str) -> None:
         self.connection_string = connection_string
+        self.settings_service = CustomerSettingsService(connection_string)
 
     def acknowledge_anomaly(self, customer_id: str, event_id: int) -> dict[str, Any]:
         _require_psycopg()
@@ -195,6 +201,46 @@ class OperationsService:
             "productBreakdown": product_breakdown,
             "recentBatches": recent_batches,
         }
+
+    def customer_settings(self, customer_id: str) -> dict[str, Any]:
+        return self.settings_service.get_settings(customer_id)
+
+    def update_customer_settings(self, customer_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return self.settings_service.update_settings(customer_id, payload)
+
+    def route_overview(self, customer_id: str) -> dict[str, Any]:
+        _require_psycopg()
+        with psycopg.connect(self.connection_string, autocommit=True) as conn:
+            routes = self._fetch_all(
+                conn,
+                """
+                SELECT *
+                FROM "vw_RouteRiskSummary"
+                WHERE "CustomerId" = %s
+                ORDER BY "AverageSpoilageProbability" DESC, "CriticalBatchCount" DESC, "BatchCount" DESC
+                LIMIT 50
+                """,
+                (customer_id,),
+            )
+        return {"routes": routes}
+
+    def model_training_runs(self, customer_id: str) -> dict[str, Any]:
+        _require_psycopg()
+        with psycopg.connect(self.connection_string, autocommit=True) as conn:
+            runs = self._fetch_all(
+                conn,
+                """
+                SELECT
+                    "RunId", "RequestedByUserId", "CustomerId", "Status", "StartedAt",
+                    "CompletedAt", "ModelVersion", "TrainingMetrics", "OutputDir", "ErrorMessage"
+                FROM "ModelTrainingRuns"
+                WHERE "CustomerId" IS NULL OR "CustomerId" = %s
+                ORDER BY "StartedAt" DESC
+                LIMIT 20
+                """,
+                (customer_id,),
+            )
+        return {"runs": runs}
 
     def _fetch_one(
         self,

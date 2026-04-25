@@ -11,6 +11,10 @@ try:
 except ModuleNotFoundError:
     func = None
 
+try:
+    from functions.auth_service import require_session
+except ModuleNotFoundError:
+    from auth_service import require_session
 from .query_service import NaturalLanguageQueryService
 
 
@@ -26,17 +30,19 @@ def _service() -> NaturalLanguageQueryService:
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
     try:
+        context = require_session(req)
         body = req.get_json()
         question = str(body.get("question", "")).strip()
-        customer_id = str(body.get("customerId", "")).strip()
-        if not question or not customer_id:
-            return _json_response({"error": "question and customerId are required"}, status_code=400)
+        if not question:
+            return _json_response({"error": "question is required"}, status_code=400)
 
         if os.getenv("DISABLE_NL_QUERY", "").lower() == "true":
             return _json_response({"error": "nl_query disabled"}, status_code=503)
 
-        result = _service().answer(question, customer_id)
+        result = _service().answer(question, context.active_customer_id)
         return _json_response(result)
+    except PermissionError as exc:
+        return _json_response({"error": str(exc)}, status_code=401)
     except ValueError as exc:
         return _json_response({"error": str(exc)}, status_code=400)
     except Exception:

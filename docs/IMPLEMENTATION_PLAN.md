@@ -148,7 +148,6 @@ Platform note: the Functions container is pinned to `linux/amd64`. The PostgreSQ
 - Deploy model artifacts with the Function app.
 - Configure production Slack webhook and SMTP credentials for alert delivery.
 - Configure real Ollama and NemoClaw endpoints over Tailscale.
-- Add authentication and authorization for dashboard and HTTP Functions.
 - Add automated tests and CI.
 
 ## Demo And Bootstrap Utilities
@@ -168,3 +167,6 @@ Implemented:
 - `functions/batch_detail/` to serve sensor history, prediction history, anomaly history, and alert history for a selected batch.
 - `functions/model_performance/` plus `vw_ModelPredictionTruth` and `vw_ModelPerformanceSummary` to compare latest predictions against `WasSpoiled`.
 - Dashboard support for anomaly acknowledgment, batch drill-down, alert log visibility, and model-performance reporting.
+- Lightweight session auth with `AppUsers`, `UserSessions`, and `UserCustomerAccess`, plus seeded demo users and active-customer switching.
+- `CustomerSettings`, `RouteLocations`, `vw_RouteRiskSummary`, and dashboard UI for route maps plus runtime threshold/alert configuration.
+- `ModelTrainingRuns`, `/api/model-training`, and live ONNX artifact refresh from PostgreSQL-backed retraining.

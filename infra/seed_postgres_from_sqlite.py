@@ -66,6 +66,26 @@ def copy_table(
     return rows_copied
 
 
+def sync_customers(pg_conn: "psycopg.Connection") -> None:
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO "Customers" ("CustomerId", "CustomerName")
+            SELECT DISTINCT "CustomerId", 'Customer ' || "CustomerId"
+            FROM "SpoilageLabels"
+            ON CONFLICT ("CustomerId") DO NOTHING
+            """
+        )
+        cur.execute(
+            """
+            INSERT INTO "CustomerSettings" ("CustomerId")
+            SELECT c."CustomerId"
+            FROM "Customers" c
+            ON CONFLICT ("CustomerId") DO NOTHING
+            """
+        )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--sqlite", default=str(DEFAULT_SQLITE))
@@ -92,6 +112,8 @@ def main() -> int:
 
         readings = copy_table(sqlite_conn, pg_conn, "SensorReadings", READING_COLUMNS)
         print(f"  SensorReadings  copied: {readings:>7}")
+        sync_customers(pg_conn)
+        print("  Customers synced from labels")
 
         pg_conn.commit()
 

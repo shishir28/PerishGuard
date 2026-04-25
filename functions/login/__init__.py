@@ -1,4 +1,4 @@
-"""HTTP endpoint for model performance reporting."""
+"""Login endpoint for dashboard sessions."""
 
 from __future__ import annotations
 
@@ -11,33 +11,33 @@ except ModuleNotFoundError:
     func = None
 
 try:
-    from functions.auth_service import require_session
-    from functions.ops_service import OperationsService
+    from functions.auth_service import AuthService
 except ModuleNotFoundError:
-    from auth_service import require_session
-    from ops_service import OperationsService
+    from auth_service import AuthService
 
 
-_SERVICE: OperationsService | None = None
+_SERVICE: AuthService | None = None
 
 
-def _service() -> OperationsService:
+def _service() -> AuthService:
     global _SERVICE
     if _SERVICE is None:
-        _SERVICE = OperationsService.from_environment()
+        _SERVICE = AuthService.from_environment()
     return _SERVICE
 
 
 def main(req: "func.HttpRequest") -> "func.HttpResponse":
     try:
-        context = require_session(req)
-        result = _service().model_performance(context.active_customer_id)
+        body = req.get_json()
+        result = _service().login(str(body.get("email", "")), str(body.get("password", "")))
         return _json(result, 200)
     except PermissionError as exc:
         return _json({"error": str(exc)}, 401)
+    except ValueError as exc:
+        return _json({"error": str(exc)}, 400)
     except Exception:
-        logging.exception("model_performance failed")
-        return _json({"error": "Failed to load model performance"}, 500)
+        logging.exception("login failed")
+        return _json({"error": "Failed to sign in"}, 500)
 
 
 def _json(payload: dict[str, object], status: int) -> "func.HttpResponse":

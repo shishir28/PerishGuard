@@ -25,30 +25,44 @@ predict_spoilage Azure Function
        └─ AlertDispatchLog audit trail
 
 PostgreSQL
+  ├─ Customers
+  ├─ AppUsers / UserSessions / UserCustomerAccess
+  ├─ CustomerSettings
+  ├─ RouteLocations
   ├─ SensorReadings
   ├─ SpoilageLabels
   ├─ SpoilagePredictions
   ├─ AnomalyEvents
   ├─ AlertDispatchLog
   ├─ AnalyticsReports
+  ├─ ModelTrainingRuns
   ├─ vw_BatchRiskSummary
   ├─ vw_ModelPredictionTruth
-  └─ vw_ModelPerformanceSummary
+  ├─ vw_ModelPerformanceSummary
+  └─ vw_RouteRiskSummary
 
 HTTP Functions
   ├─ ack_anomaly: operator acknowledgment write API
   ├─ batch_detail: sensor/prediction/alert drill-down read API
+  ├─ customer_settings_api: risk/anomaly/alert configuration API
   ├─ ingest_reading: HTTP shim into the prediction pipeline
+  ├─ login/session/logout/switch_customer: lightweight dashboard auth
   ├─ model_performance: prediction-vs-truth performance API
+  ├─ model_training: retraining trigger plus run history
   ├─ nl_query: guarded text-to-SQL over customer-scoped data
+  ├─ route_overview: geospatial route-risk summary API
   └─ run_analytics: on-demand analytics batch execution
 
-React dashboard
+React dashboard (PerishGuard Pulse)
+  ├─ login and per-customer session switching
   ├─ live risk queue
   ├─ live telemetry trend
   ├─ live anomaly feed with acknowledgment
   ├─ selected-batch drill-down
+  ├─ geospatial route-risk map
+  ├─ runtime threshold and alert config UI
   ├─ model performance panel
+  ├─ retraining controls and history
   └─ live natural-language query panel
 ```
 
@@ -61,8 +75,8 @@ React dashboard
 5. The Function loads ordered batch history and builds the 24-feature vector from `training/features.py`.
 6. ONNX models produce spoilage probability and estimated hours left.
 7. A prediction row is written to `"SpoilagePredictions"`.
-8. Alert dispatch runs when risk thresholds match agent routing rules and the batch is outside cooldown; successful Slack/email deliveries update prediction alert status and every channel attempt is logged in `AlertDispatchLog`.
-9. The dashboard reads risk, anomaly, and telemetry views through `nl_query`, uses dedicated HTTP APIs for acknowledgment and drill-down, and can trigger weekly analytics through `run_analytics`.
+8. Alert dispatch runs when risk thresholds match agent routing rules and the batch is outside the customer-configured cooldown; successful Slack/email deliveries update prediction alert status and every channel attempt is logged in `AlertDispatchLog`.
+9. The dashboard authenticates into a session, resolves the active customer server-side, reads risk/anomaly/telemetry via `nl_query`, uses dedicated APIs for acknowledgment, drill-down, route maps, and settings, and can trigger weekly analytics or model retraining.
 
 ## Codebase Shape
 
@@ -70,8 +84,10 @@ React dashboard
 - `ingest_reading` is a thin HTTP wrapper around the same prediction service used by the Event Hub trigger so demos can run without IoT Hub.
 - `anomaly_detection` is a pure rules module with no storage side effects; persistence happens in `predict_spoilage`.
 - `nemoclaw_dispatch` is isolated from inference so alert generation, agent routing, and real channel delivery can degrade independently through deterministic fallback and per-channel logging.
-- `nl_query` drives both the free-form dashboard chat and the fixed dashboard cards from PostgreSQL.
-- `ack_anomaly`, `batch_detail`, and `model_performance` are narrow operational APIs for dashboard workflows that should not go through text-to-SQL.
+- `nl_query` drives both the free-form dashboard chat and the fixed dashboard cards from PostgreSQL, but the active customer now comes from session auth instead of the browser payload.
+- `login`, `session`, `logout`, and `switch_customer` provide lightweight local auth without introducing an external identity provider for the Docker demo stack.
+- `ack_anomaly`, `batch_detail`, `model_performance`, `route_overview`, and `customer_settings_api` are narrow operational APIs for dashboard workflows that should not go through text-to-SQL.
+- `model_training` closes the loop by retraining directly from PostgreSQL labels/readings and hot-reloading the shared ONNX artifacts.
 - `analytics_batch` is a timer-driven reporting job, and `run_analytics` exposes the same service through an HTTP trigger for demos and manual runs.
 - `training/` remains intentionally separate from the production path; it uses SQLite locally, but the deployed application stack reads and writes PostgreSQL.
 
@@ -81,7 +97,7 @@ Training uses generated or QA-provided batch labels plus telemetry history:
 
 - Classifier: LightGBM, balanced class weights, target `WasSpoiled`.
 - Regressor: LightGBM, target `ActualShelfLifeH`.
-- Export: `spoilage_classifier.onnx`, `shelf_life_regressor.onnx`, and `model_metadata.json`.
+- Export: `spoilage_classifier.onnx`, `shelf_life_regressor.onnx`, and `model_metadata.json`, with live refresh when retraining rewrites the shared model directory.
 - Runtime: ONNX Runtime in Azure Functions.
 
 The feature contract is shared between training and inference through `training/features.py`.
@@ -109,11 +125,11 @@ Agent routing:
 | Quality | `HIGH` or `CRITICAL` | Inspection and compliance note |
 | Notify | `MEDIUM`, `HIGH`, or `CRITICAL` | Dashboard, email, and SMS copy |
 
-If Ollama or NemoClaw are unavailable, deterministic fallback text and task metadata are used. Slack webhook and SMTP email delivery are optional and controlled through environment variables.
+If Ollama or NemoClaw are unavailable, deterministic fallback text and task metadata are used. Slack webhook and SMTP email delivery are optional and controlled through environment variables, while cooldown and routing thresholds can be overridden per customer in `CustomerSettings`.
 
 ## Natural-Language Queries
 
-`nl_query` accepts a `customerId` and `question`.
+`nl_query` accepts a `question` and resolves `customerId` from the authenticated session.
 
 Guardrails:
 
@@ -124,6 +140,19 @@ Guardrails:
 - Results are capped to 50 rows.
 
 When `OLLAMA_ENDPOINT` is missing, deterministic fallback queries handle common risk, anomaly, telemetry, and performance questions against curated PostgreSQL tables and views.
+
+## Auth And Multi-tenancy
+
+- Dashboard users authenticate through seeded or persisted rows in `AppUsers`.
+- Session tokens are stored in `UserSessions`, and the active customer is changed through `switch_customer`.
+- Customer access is enforced in the Functions app via `UserCustomerAccess`; dashboard APIs no longer trust a browser-provided `customerId`.
+- Demo users are seeded for local workflows: `admin@perishguard.local` and per-customer `ops+{customer}@perishguard.local` accounts.
+
+## Thresholds, Routes, And Retraining
+
+- `CustomerSettings` stores per-customer risk thresholds, anomaly thresholds, and alert-routing config.
+- `RouteLocations` plus `vw_RouteRiskSummary` power the geospatial route-risk map.
+- `ModelTrainingRuns` records synchronous retraining triggered from the dashboard against PostgreSQL labels and readings.
 
 ## Business Analytics
 

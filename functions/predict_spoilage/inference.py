@@ -35,6 +35,10 @@ if str(TRAINING_DIR) not in sys.path:
 from config import FEATURE_COLUMNS, MODEL_DIR as DEFAULT_MODEL_DIR, MODEL_VERSION, RISK_THRESHOLDS
 from features import features_for_batch
 try:
+    from functions.customer_settings import load_runtime_settings_from_connection
+except ModuleNotFoundError:
+    from customer_settings import load_runtime_settings_from_connection
+try:
     from functions.anomaly_detection.detector import AnomalyEvent, detect_anomalies
     from functions.nemoclaw_dispatch.dispatcher import (
         AlertDispatcher,
@@ -99,6 +103,7 @@ class OnnxBundle:
         if not metadata_path.exists():
             raise FileNotFoundError(f"{metadata_path} not found. Run training/train_spoilage_model.py first.")
 
+        self.metadata_path = metadata_path
         self.metadata = json.loads(metadata_path.read_text())
         self.model_version = self.metadata.get("model_version", MODEL_VERSION)
         self.feature_columns = self.metadata.get("feature_columns", FEATURE_COLUMNS)
@@ -130,7 +135,9 @@ class PredictionService:
         alert_dispatcher: AlertDispatcher | None = None,
     ) -> None:
         self.connection_string = connection_string
+        self.model_dir = model_dir
         self.models = OnnxBundle(model_dir)
+        self._metadata_mtime_ns = self.models.metadata_path.stat().st_mtime_ns
         self.alert_dispatcher = alert_dispatcher or AlertDispatcher.from_environment()
 
     @classmethod
@@ -148,13 +155,20 @@ class PredictionService:
         reading = normalize_reading(payload)
 
         with psycopg.connect(self.connection_string, autocommit=False) as conn:
+            settings = load_runtime_settings_from_connection(conn, str(reading["CustomerId"]))
             insert_sensor_reading(conn, reading)
-            history = load_batch_readings(conn, reading["BatchId"])
-            anomalies = detect_anomalies(reading, history)
+            history = load_batch_readings(conn, reading["BatchId"], reading["CustomerId"])
+            anomalies = detect_anomalies(reading, history, settings["anomalyConfig"])
             insert_anomaly_events(conn, anomalies)
-            result = self.predict_from_history(reading, history, anomalies)
+            result = self.predict_from_history(reading, history, anomalies, settings["riskThresholds"])
             stored = insert_prediction(conn, result, history)
-            dispatch_result = maybe_dispatch_alerts(conn, self.alert_dispatcher, stored.result, anomalies)
+            dispatch_result = maybe_dispatch_alerts(
+                conn,
+                self.alert_dispatcher,
+                stored.result,
+                anomalies,
+                settings["alertConfig"],
+            )
             insert_alert_dispatch_logs(conn, stored, dispatch_result)
             if dispatch_result.alert_sent:
                 mark_alert_sent(conn, stored.prediction_id, dispatch_result.channel)
@@ -166,15 +180,17 @@ class PredictionService:
         reading: dict[str, Any],
         history: pd.DataFrame,
         anomalies: list[AnomalyEvent] | None = None,
+        risk_thresholds: dict[str, float] | None = None,
     ) -> PredictionResult:
         if history.empty:
             raise ValueError(f"No sensor history found for batch {reading['BatchId']}")
 
+        self._ensure_models_current()
         anomalies = anomalies or []
         product_type = str(reading["ProductType"]).lower()
         features = features_for_batch(history, product_type)
         probability, hours_left = self.models.predict(features)
-        risk_level = risk_from_probability(probability, self.models.risk_thresholds)
+        risk_level = risk_from_probability(probability, risk_thresholds or self.models.risk_thresholds)
         critical_anomaly_count = sum(1 for event in anomalies if event.severity == "CRITICAL")
         anomaly_breaks = sum(
             1
@@ -196,6 +212,16 @@ class PredictionService:
             anomaly_count=len(anomalies),
             critical_anomaly_count=critical_anomaly_count,
         )
+
+    def _ensure_models_current(self) -> None:
+        metadata_path = self.model_dir / "model_metadata.json"
+        if not metadata_path.exists():
+            return
+        current_mtime_ns = metadata_path.stat().st_mtime_ns
+        if current_mtime_ns == self._metadata_mtime_ns:
+            return
+        self.models = OnnxBundle(self.model_dir)
+        self._metadata_mtime_ns = current_mtime_ns
 
 
 def normalize_reading(payload: dict[str, Any]) -> dict[str, Any]:
@@ -243,17 +269,17 @@ def insert_sensor_reading(conn: "psycopg.Connection", reading: dict[str, Any]) -
     conn.execute(f'INSERT INTO "SensorReadings" ({columns}) VALUES ({placeholders})', values)
 
 
-def load_batch_readings(conn: "psycopg.Connection", batch_id: str) -> pd.DataFrame:
+def load_batch_readings(conn: "psycopg.Connection", batch_id: str, customer_id: str) -> pd.DataFrame:
     query = """
         SELECT "BatchId", "CustomerId", "DeviceId", "ProductType", "ReadingAt",
                "Temperature", "Humidity", "Ethylene", "CO2", "NH3", "VOC",
                "ShockG", "LightLux"
         FROM "SensorReadings"
-        WHERE "BatchId" = %s
+        WHERE "BatchId" = %s AND "CustomerId" = %s
         ORDER BY "ReadingAt"
     """
     with conn.cursor() as cur:
-        cur.execute(query, [batch_id])
+        cur.execute(query, [batch_id, customer_id])
         columns = [desc[0] for desc in cur.description]
         rows = cur.fetchall()
     return pd.DataFrame(rows, columns=columns)
@@ -329,11 +355,13 @@ def maybe_dispatch_alerts(
     dispatcher: AlertDispatcher,
     result: PredictionResult,
     anomalies: list[AnomalyEvent],
+    alert_config: dict[str, Any] | None = None,
 ) -> DispatchResult:
     context = build_alert_context(result, anomalies)
-    if not agent_tasks_for_prediction(context):
+    if not agent_tasks_for_prediction(context, alert_config):
         return DispatchResult(False, False, None, None, [], [])
-    if alert_in_cooldown(conn, result.batch_id, dispatcher.cooldown_minutes):
+    cooldown_minutes = int((alert_config or {}).get("cooldownMinutes", dispatcher.cooldown_minutes))
+    if alert_in_cooldown(conn, result.batch_id, cooldown_minutes):
         return DispatchResult(
             True,
             False,
@@ -351,7 +379,7 @@ def maybe_dispatch_alerts(
                 )
             ],
         )
-    return dispatcher.dispatch(context)
+    return dispatcher.dispatch(context, alert_config)
 
 
 def alert_in_cooldown(conn: "psycopg.Connection", batch_id: str, cooldown_minutes: int) -> bool:

@@ -108,8 +108,8 @@ class AlertDispatcher:
             ollama_model=os.getenv("OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL),
         )
 
-    def dispatch(self, context: dict[str, Any]) -> DispatchResult:
-        tasks = agent_tasks_for_prediction(context)
+    def dispatch(self, context: dict[str, Any], alert_config: dict[str, Any] | None = None) -> DispatchResult:
+        tasks = agent_tasks_for_prediction(context, alert_config)
         if not tasks:
             return DispatchResult(False, False, None, None, [], [])
 
@@ -352,13 +352,18 @@ class AlertDispatcher:
         )
 
 
-def agent_tasks_for_prediction(context: dict[str, Any]) -> list[AgentTask]:
+def agent_tasks_for_prediction(
+    context: dict[str, Any],
+    alert_config: dict[str, Any] | None = None,
+) -> list[AgentTask]:
     prediction = context["prediction"]
     risk = prediction["riskLevel"]
     hours_left = float(prediction.get("estimatedHoursLeft") or 0.0)
+    config = alert_config or {}
+    logistics_hours_left_trigger = float(config.get("logisticsHoursLeftTrigger", 12))
 
     tasks: list[AgentTask] = []
-    if risk == "CRITICAL" and hours_left < 12:
+    if risk == "CRITICAL" and hours_left < logistics_hours_left_trigger:
         tasks.append(
             AgentTask(
                 "Logistics",

@@ -29,6 +29,7 @@ Defaults:
 - `DISABLE_IOT_TRIGGER=true`, so the Functions app can start locally without live IoT Hub settings.
 - `OLLAMA_ENDPOINT` and `NEMOCLAW_ENDPOINT` are blank, so deterministic fallbacks are used.
 - Slack/email alert delivery settings are blank, so delivery attempts are logged as skipped until configured.
+- `AUTH_SESSION_HOURS=12`, so dashboard login sessions expire after half a day by default.
 - PostgreSQL uses the local credentials from `.env`.
 - `demo-tools` targets Postgres at `postgres:5432` and the HTTP ingest shim at `http://functions/api/ingest-reading`.
 
@@ -61,10 +62,17 @@ Open:
 The dashboard proxies `/api/*` to the Functions container. For example:
 
 - `/api/nl-query` -> `nl_query`
+- `/api/login` -> `login`
+- `/api/session` -> `session`
+- `/api/logout` -> `logout`
+- `/api/session/customer` -> `switch_customer`
 - `/api/anomalies/{eventId}/ack` -> `ack_anomaly`
 - `/api/batches/{batchId}` -> `batch_detail`
 - `/api/ingest-reading` -> `ingest_reading`
 - `/api/model-performance` -> `model_performance`
+- `/api/routes/overview` -> `route_overview`
+- `/api/customer-settings` -> `customer_settings_api`
+- `/api/model-training` -> `model_training`
 - `/api/run-analytics` -> `run_analytics`
 
 ## Bootstrap Demo Data
@@ -77,6 +85,8 @@ docker compose --profile tools run --rm demo-tools python infra/seed_postgres_fr
 ```
 
 This loads the existing `perishguard.db` labels and readings into PostgreSQL so the live dashboard has data immediately.
+
+The same bootstrap path also syncs customer rows used by the local session-auth and customer-settings features.
 
 ## Generate Live Traffic
 
@@ -110,6 +120,8 @@ Outputs:
 - `training/models/shelf_life_regressor.onnx`
 - `training/models/model_metadata.json`
 
+The Functions container now mounts `training/models` read-write so `/api/model-training` can regenerate artifacts in-place and the runtime can pick up the refreshed metadata on the next prediction request.
+
 ## Live IoT Testing
 
 Set these in `.env`:
@@ -139,6 +151,18 @@ ALERT_COOLDOWN_MINUTES=30
 ```
 
 If they are blank or unavailable, the application uses deterministic fallback text and task metadata.
+
+Local dashboard auth defaults:
+
+```bash
+AUTH_SESSION_HOURS=12
+```
+
+Demo users are seeded in PostgreSQL:
+
+- `admin@perishguard.local`
+- `ops+c010@perishguard.local`
+- Password: `perishguard-demo`
 
 Optional real delivery channels:
 

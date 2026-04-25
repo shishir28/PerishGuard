@@ -1,4 +1,4 @@
-"""HTTP endpoint for batch drill-down detail."""
+"""Route-risk summary for geospatial dashboard rendering."""
 
 from __future__ import annotations
 
@@ -31,18 +31,12 @@ def _service() -> OperationsService:
 def main(req: "func.HttpRequest") -> "func.HttpResponse":
     try:
         context = require_session(req)
-        batch_id = str(req.route_params.get("batchId", "")).strip()
-        if not batch_id:
-            return _json({"error": "batchId route param is required"}, 400)
-        result = _service().batch_detail(context.active_customer_id, batch_id)
-        return _json(result, 200)
+        return _json(_service().route_overview(context.active_customer_id), 200)
     except PermissionError as exc:
         return _json({"error": str(exc)}, 401)
-    except LookupError as exc:
-        return _json({"error": str(exc)}, 404)
     except Exception:
-        logging.exception("batch_detail failed")
-        return _json({"error": "Failed to load batch detail"}, 500)
+        logging.exception("route_overview failed")
+        return _json({"error": "Failed to load route overview"}, 500)
 
 
 def _json(payload: dict[str, object], status: int) -> "func.HttpResponse":

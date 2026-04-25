@@ -84,7 +84,7 @@ services:
     ports:
       - "7071:80"
     volumes:
-      - ./training/models:/home/site/wwwroot/training/models:ro
+      - ./training/models:/home/site/wwwroot/training/models
 
   dashboard:
     build:

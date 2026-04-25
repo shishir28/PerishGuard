@@ -12,6 +12,7 @@
     "OLLAMA_MODEL": "llama3.3:70b",
     "NEMOCLAW_ENDPOINT": "http://<tailscale-ip>:8080",
     "ALERT_COOLDOWN_MINUTES": "30",
+    "AUTH_SESSION_HOURS": "12",
     "SLACK_WEBHOOK_URL": "https://hooks.slack.com/services/<team>/<channel>/<token>",
     "SMTP_HOST": "smtp.example.com",
     "SMTP_PORT": "587",
