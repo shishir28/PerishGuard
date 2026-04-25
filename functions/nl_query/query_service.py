@@ -180,7 +180,8 @@ def fallback_sql(question: str) -> str:
         return (
             'SELECT "LastPredictedAt", "BatchId", "ProductType", "SpoilageProbability", '
             '"RiskLevel", "EstimatedHoursLeft", "ColdChainBreaks" FROM "vw_BatchRiskSummary" '
-            'WHERE "CustomerId" = %s ORDER BY "SpoilageProbability" DESC LIMIT 50'
+            'WHERE "CustomerId" = %s AND "LastPredictedAt" IS NOT NULL '
+            'ORDER BY "SpoilageProbability" DESC LIMIT 50'
         )
     return (
         'SELECT "ReadingAt", "BatchId", "DeviceId", "ProductType", "Temperature", "Humidity" '
@@ -208,7 +209,72 @@ def is_prebuilt_question(question: str) -> bool:
 def template_summary(question: str, rows: list[dict[str, Any]]) -> str:
     if not rows:
         return "No matching records were found for this customer."
-    return f"Found {len(rows)} matching records for this customer. The first result is {rows[0]}."
+    q = question.lower()
+    if "anomal" in q:
+        latest = rows[0]
+        severity_counts = _count_values(rows, "Severity")
+        top_severity = severity_counts[0][0] if severity_counts else "mixed"
+        return (
+            f"Found {len(rows)} recent anomalies. "
+            f"The latest event is {latest.get('SensorType', 'sensor')} {latest.get('AnomalyType', 'signal')} "
+            f"on batch {latest.get('BatchId', 'unknown')} with {top_severity.lower()} severity dominating the current feed."
+        )
+    if "performance" in q or "accuracy" in q or "false positive" in q or "false negative" in q:
+        first = rows[0]
+        product = first.get("ProductType", "the top product group")
+        accuracy = _format_percent(first.get("Accuracy"))
+        mae = _format_hours(first.get("MeanAbsoluteError"))
+        return (
+            f"Model performance returned {len(rows)} grouped rows. "
+            f"{product} is the leading segment with accuracy at {accuracy} and mean absolute error at {mae}."
+        )
+    if "spoil" in q or "risk" in q or "critical" in q:
+        top = rows[0]
+        risk_level = str(top.get("RiskLevel") or "UNKNOWN").lower()
+        probability = _format_percent(top.get("SpoilageProbability"))
+        hours_left = _format_hours(top.get("EstimatedHoursLeft"))
+        return (
+            f"Found {len(rows)} predicted batches with live risk scores. "
+            f"The highest-risk batch is {top.get('BatchId', 'unknown')} ({top.get('ProductType', 'unknown product')}) "
+            f"at {risk_level} risk with spoilage probability {probability} and about {hours_left} remaining."
+        )
+    latest = rows[0]
+    temperature = _format_number(latest.get("Temperature"))
+    humidity = _format_number(latest.get("Humidity"))
+    return (
+        f"Found {len(rows)} recent telemetry readings. "
+        f"The latest reading is for batch {latest.get('BatchId', 'unknown')} on device {latest.get('DeviceId', 'unknown')} "
+        f"at {temperature} C and {humidity}% humidity."
+    )
+
+
+def _count_values(rows: list[dict[str, Any]], key: str) -> list[tuple[str, int]]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        value = str(row.get(key) or "UNKNOWN")
+        counts[value] = counts.get(value, 0) + 1
+    return sorted(counts.items(), key=lambda item: item[1], reverse=True)
+
+
+def _format_percent(value: Any) -> str:
+    try:
+        return f"{round(float(value) * 100)}%"
+    except (TypeError, ValueError):
+        return "—"
+
+
+def _format_hours(value: Any) -> str:
+    try:
+        return f"{float(value):.1f}h"
+    except (TypeError, ValueError):
+        return "—"
+
+
+def _format_number(value: Any) -> str:
+    try:
+        return f"{float(value):.1f}"
+    except (TypeError, ValueError):
+        return "—"
 
 
 def suggest_chart(question: str, rows: list[dict[str, Any]]) -> str:

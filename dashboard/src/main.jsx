@@ -1,14 +1,25 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
+  CircleMarker,
+  MapContainer,
+  Pane,
+  Polyline,
+  Popup,
+  TileLayer,
+  Tooltip as MapTooltip,
+  useMap,
+} from 'react-leaflet';
+import {
   CartesianGrid,
   Line,
   LineChart,
   ResponsiveContainer,
-  Tooltip,
+  Tooltip as ChartTooltip,
   XAxis,
   YAxis,
 } from 'recharts';
+import 'leaflet/dist/leaflet.css';
 import './styles.css';
 
 const SESSION_STORAGE_KEY = 'perishguard.sessionToken';
@@ -806,7 +817,7 @@ function App() {
                       <CartesianGrid stroke={chartPalette.grid} vertical={false} />
                       <XAxis dataKey="time" tickLine={false} axisLine={false} stroke={chartPalette.axis} />
                       <YAxis tickLine={false} axisLine={false} stroke={chartPalette.axis} />
-                      <Tooltip contentStyle={tooltipStyle} />
+                      <ChartTooltip contentStyle={tooltipStyle} />
                       <Line type="monotone" dataKey="temperature" stroke={chartPalette.temperature} strokeWidth={3} dot={false} />
                       <Line type="monotone" dataKey="humidity" stroke={chartPalette.humidity} strokeWidth={2} dot={false} />
                     </LineChart>
@@ -1241,7 +1252,7 @@ function BatchDrawer({
                     <CartesianGrid stroke={chartPalette.grid} vertical={false} />
                     <XAxis dataKey="time" tickLine={false} axisLine={false} stroke={chartPalette.axis} />
                     <YAxis tickLine={false} axisLine={false} stroke={chartPalette.axis} />
-                    <Tooltip contentStyle={tooltipStyle} />
+                    <ChartTooltip contentStyle={tooltipStyle} />
                     <Line type="monotone" dataKey="temperature" stroke={chartPalette.temperature} strokeWidth={3} dot={false} />
                     <Line type="monotone" dataKey="humidity" stroke={chartPalette.humidity} strokeWidth={2} dot={false} />
                   </LineChart>
@@ -1254,7 +1265,7 @@ function BatchDrawer({
                     <CartesianGrid stroke={chartPalette.grid} vertical={false} />
                     <XAxis dataKey="time" tickLine={false} axisLine={false} stroke={chartPalette.axis} />
                     <YAxis tickLine={false} axisLine={false} domain={[0, 100]} stroke={chartPalette.axis} />
-                    <Tooltip contentStyle={tooltipStyle} />
+                    <ChartTooltip contentStyle={tooltipStyle} />
                     <Line type="monotone" dataKey="probability" stroke={chartPalette.probability} strokeWidth={3} dot={false} />
                   </LineChart>
                 </ResponsiveContainer>
@@ -1312,82 +1323,124 @@ function RouteMap({ routes, compact = false }) {
     return <p className="empty">Route coordinates are not available for the current filters.</p>;
   }
 
-  const points = validRoutes.flatMap((route) => ([
-    [Number(route.OriginLongitude), Number(route.OriginLatitude)],
-    [Number(route.DestinationLongitude), Number(route.DestinationLatitude)],
-  ]));
-  const minX = Math.min(...points.map(([x]) => x));
-  const maxX = Math.max(...points.map(([x]) => x));
-  const minY = Math.min(...points.map(([, y]) => y));
-  const maxY = Math.max(...points.map(([, y]) => y));
-  const width = compact ? 560 : 960;
-  const height = compact ? 280 : 440;
-  const padding = compact ? 32 : 52;
-
-  const project = (longitude, latitude) => ({
-    x: padding + ((longitude - minX) / Math.max(maxX - minX, 1)) * (width - padding * 2),
-    y: height - padding - ((latitude - minY) / Math.max(maxY - minY, 1)) * (height - padding * 2),
+  const routeSegments = validRoutes.map((route) => {
+    const probability = Number(route.AverageSpoilageProbability) || 0;
+    return {
+      ...route,
+      probability,
+      color: routeColor(probability),
+      originPoint: [Number(route.OriginLatitude), Number(route.OriginLongitude)],
+      destinationPoint: [Number(route.DestinationLatitude), Number(route.DestinationLongitude)],
+    };
   });
+  const bounds = routeSegments.flatMap((route) => [route.originPoint, route.destinationPoint]);
+  const locationMarkers = dedupeRouteLocations(routeSegments);
 
   return (
     <div className="routeMapWrap">
-      <svg viewBox={`0 0 ${width} ${height}`} className="routeMapSvg" aria-label="Route risk map">
-        <defs>
-          <linearGradient id="routeGlow" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#57d0ff" stopOpacity="0.65" />
-            <stop offset="100%" stopColor="#7fffd4" stopOpacity="0.18" />
-          </linearGradient>
-        </defs>
-        <rect x="0" y="0" width={width} height={height} rx="26" fill="var(--map-bg)" />
-        {[0.2, 0.4, 0.6, 0.8].map((marker) => (
-          <g key={marker} opacity="0.18">
-            <line x1={padding} x2={width - padding} y1={height * marker} y2={height * marker} stroke="var(--map-grid)" />
-            <line x1={width * marker} x2={width * marker} y1={padding} y2={height - padding} stroke="var(--map-grid)" />
-          </g>
-        ))}
-        {validRoutes.map((route) => {
-          const start = project(Number(route.OriginLongitude), Number(route.OriginLatitude));
-          const end = project(Number(route.DestinationLongitude), Number(route.DestinationLatitude));
-          const midX = (start.x + end.x) / 2;
-          const midY = Math.min(start.y, end.y) - (compact ? 18 : 28);
-          const probability = Number(route.AverageSpoilageProbability) || 0;
-          const color = probability >= 0.7 ? '#ff6b7a' : probability >= 0.45 ? '#f7c66c' : '#57d0ff';
-          const strokeWidth = 1.8 + Math.min(Number(route.BatchCount) || 0, 8) * 0.4;
-          const routeKey = `${route.Origin}-${route.Destination}`;
-          return (
-            <g key={routeKey}>
-              <path
-                d={`M ${start.x} ${start.y} Q ${midX} ${midY} ${end.x} ${end.y}`}
-                stroke={color}
-                strokeWidth={strokeWidth}
-                fill="none"
-                strokeOpacity="0.85"
-              />
-              <circle cx={start.x} cy={start.y} r="5.5" fill="var(--map-origin)" />
-              <circle cx={end.x} cy={end.y} r="5.5" fill="var(--map-destination)" />
-              {!compact && (
-                <>
-                  <text x={start.x + 8} y={start.y - 10} fontSize="12" fill="var(--map-text)">{route.Origin}</text>
-                  <text x={end.x + 8} y={end.y - 10} fontSize="12" fill="var(--map-text)">{route.Destination}</text>
-                </>
-              )}
-            </g>
-          );
-        })}
-      </svg>
+      <div className={`routeMapCanvas ${compact ? 'compact' : ''}`}>
+        <MapContainer
+          className="routeLeafletMap"
+          center={bounds[0]}
+          zoom={compact ? 3 : 4}
+          scrollWheelZoom={false}
+          zoomControl={!compact}
+        >
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          />
+          <RouteMapBounds bounds={bounds} compact={compact} />
+          <Pane name="route-lines" style={{ zIndex: 420 }}>
+            {routeSegments.flatMap((route) => ([
+              (
+                <Polyline
+                  key={`${route.Origin}-${route.Destination}-line-shadow`}
+                  pathOptions={{
+                    color: '#08111f',
+                    weight: compact ? 8 : 10,
+                    opacity: 0.42,
+                    lineCap: 'round',
+                    lineJoin: 'round',
+                  }}
+                  positions={[route.originPoint, route.destinationPoint]}
+                />
+              ),
+              (
+                <Polyline
+                  key={`${route.Origin}-${route.Destination}-line`}
+                  pathOptions={{
+                    color: route.color,
+                    weight: compact ? 4.5 : 6,
+                    opacity: 0.96,
+                    lineCap: 'round',
+                    lineJoin: 'round',
+                    dashArray: compact ? null : '12 8',
+                  }}
+                  positions={[route.originPoint, route.destinationPoint]}
+                />
+              ),
+            ]))}
+          </Pane>
+          <Pane name="route-markers" style={{ zIndex: 460 }}>
+            {locationMarkers.map((location) => (
+              <CircleMarker
+                key={`${location.kind}-${location.name}-${location.point[0]}-${location.point[1]}`}
+                center={location.point}
+                pathOptions={{
+                  color: location.strokeColor,
+                  fillColor: location.fillColor,
+                  fillOpacity: 0.98,
+                  weight: 3,
+                }}
+                radius={compact ? 6 : 8}
+              >
+                {!compact && (
+                  <MapTooltip permanent direction="top" offset={[0, -10]} className="routeLocationLabel">
+                    {location.name}
+                  </MapTooltip>
+                )}
+                <Popup>
+                  <strong>{location.name}</strong>
+                  <div>{location.kind === 'origin' ? 'Origin' : 'Destination'} node</div>
+                  <div>{location.routeCount} connected routes</div>
+                  <div>Peak route risk {formatPercent(location.maxProbability)}</div>
+                </Popup>
+              </CircleMarker>
+            ))}
+          </Pane>
+        </MapContainer>
+      </div>
       <div className="routeLegend">
-        {validRoutes.slice(0, compact ? 3 : 5).map((route) => (
+        {routeSegments.slice(0, compact ? 3 : 5).map((route) => (
           <div className="routeLegendRow" key={`${route.Origin}-${route.Destination}-legend`}>
             <div>
               <strong>{route.Origin} → {route.Destination}</strong>
               <span>{route.BatchCount} batches · {route.CriticalBatchCount} critical</span>
             </div>
-            <span className="legendValue">{formatPercent(route.AverageSpoilageProbability)}</span>
+            <span className="legendValue">{formatPercent(route.probability)}</span>
           </div>
         ))}
       </div>
+      <p className="routeMapNote">Leaflet + OpenStreetMap tiles are enabled for local and non-production usage.</p>
     </div>
   );
+}
+
+function RouteMapBounds({ bounds, compact }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!bounds.length) {
+      return;
+    }
+    map.fitBounds(bounds, {
+      padding: compact ? [18, 18] : [28, 28],
+      maxZoom: compact ? 5 : 6,
+    });
+  }, [bounds, compact, map]);
+
+  return null;
 }
 
 function Icon({ name }) {
@@ -1462,6 +1515,57 @@ function riskLabelFromProbability(value) {
     return 'MEDIUM';
   }
   return 'LOW';
+}
+
+function routeColor(probability) {
+  if (probability >= 0.7) {
+    return '#ff6b7a';
+  }
+  if (probability >= 0.45) {
+    return '#f7c66c';
+  }
+  return '#57d0ff';
+}
+
+function dedupeRouteLocations(routeSegments) {
+  const locations = new Map();
+
+  for (const route of routeSegments) {
+    const entries = [
+      {
+        key: `origin-${route.Origin}-${route.originPoint[0]}-${route.originPoint[1]}`,
+        kind: 'origin',
+        name: route.Origin,
+        point: route.originPoint,
+        fillColor: '#7fffd4',
+        strokeColor: route.color,
+      },
+      {
+        key: `destination-${route.Destination}-${route.destinationPoint[0]}-${route.destinationPoint[1]}`,
+        kind: 'destination',
+        name: route.Destination,
+        point: route.destinationPoint,
+        fillColor: '#57d0ff',
+        strokeColor: route.color,
+      },
+    ];
+
+    for (const entry of entries) {
+      const existing = locations.get(entry.key);
+      if (existing) {
+        existing.routeCount += 1;
+        existing.maxProbability = Math.max(existing.maxProbability, route.probability);
+        continue;
+      }
+      locations.set(entry.key, {
+        ...entry,
+        routeCount: 1,
+        maxProbability: route.probability,
+      });
+    }
+  }
+
+  return [...locations.values()];
 }
 
 const tooltipStyle = {

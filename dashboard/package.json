@@ -10,10 +10,11 @@
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.0",
-    "vite": "^7.0.0",
+    "leaflet": "^1.9.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "recharts": "^3.0.0"
-  },
-  "devDependencies": {}
+    "react-leaflet": "^5.0.0",
+    "recharts": "^3.0.0",
+    "vite": "^7.0.0"
+  }
 }

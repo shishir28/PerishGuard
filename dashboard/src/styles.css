@@ -770,6 +770,64 @@ button {
   border-radius: 22px;
 }
 
+.routeMapCanvas {
+  min-height: 440px;
+  overflow: hidden;
+  border-radius: 22px;
+  border: 1px solid var(--table-border);
+}
+
+.routeMapCanvas.compact {
+  min-height: 280px;
+}
+
+.routeLeafletMap {
+  width: 100%;
+  height: 100%;
+  background: var(--map-bg);
+}
+
+.routeLeafletMap .leaflet-control-zoom a,
+.routeLeafletMap .leaflet-popup-content-wrapper,
+.routeLeafletMap .leaflet-popup-tip {
+  background: var(--panel-soft-bg);
+  color: var(--text);
+}
+
+.routeLeafletMap .leaflet-control-zoom a {
+  border-bottom-color: var(--table-border);
+}
+
+.routeLeafletMap .leaflet-control-zoom,
+.routeLeafletMap .leaflet-popup-content-wrapper {
+  border: 1px solid var(--table-border);
+  box-shadow: var(--surface-shadow);
+}
+
+.routeLeafletMap .leaflet-control-attribution {
+  background: rgba(255, 255, 255, 0.78);
+  color: #102033;
+}
+
+.routeLeafletMap .leaflet-control-attribution a {
+  color: #1878d8;
+}
+
+.routeLeafletMap .leaflet-tooltip.routeLocationLabel {
+  padding: 4px 8px;
+  border: 1px solid var(--table-border);
+  border-radius: 999px;
+  background: rgba(8, 14, 25, 0.88);
+  color: #eff6ff;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.routeLeafletMap .leaflet-tooltip.routeLocationLabel::before {
+  display: none;
+}
+
 .routeLegend {
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
@@ -783,6 +841,12 @@ button {
   border-radius: 18px;
   background: var(--panel-muted-bg);
   border: 1px solid var(--table-border);
+}
+
+.routeMapNote {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
 }
 
 .settingsForm.modern {

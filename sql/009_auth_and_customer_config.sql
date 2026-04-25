@@ -91,7 +91,7 @@ ON CONFLICT ("CustomerId") DO NOTHING;
 
 INSERT INTO "RouteLocations" ("LocationName", "Latitude", "Longitude", "Region", "CountryCode")
 VALUES
-    ('Fresno', -36.7378, 119.7871, 'California', 'US'),
+    ('Fresno', 36.7378, -119.7871, 'California', 'US'),
     ('Auckland', -36.8509, 174.7645, 'Auckland', 'NZ'),
     ('Osaka', 34.6937, 135.5023, 'Kansai', 'JP'),
     ('Seattle', 47.6062, -122.3321, 'Washington', 'US'),
@@ -103,7 +103,12 @@ VALUES
     ('Perth', -31.9505, 115.8605, 'Western Australia', 'AU'),
     ('Adelaide', -34.9285, 138.6007, 'South Australia', 'AU'),
     ('Canberra', -35.2809, 149.1300, 'Australian Capital Territory', 'AU')
-ON CONFLICT ("LocationName") DO NOTHING;
+ON CONFLICT ("LocationName") DO UPDATE
+SET
+    "Latitude" = EXCLUDED."Latitude",
+    "Longitude" = EXCLUDED."Longitude",
+    "Region" = EXCLUDED."Region",
+    "CountryCode" = EXCLUDED."CountryCode";
 
 INSERT INTO "AppUsers" ("UserId", "Email", "DisplayName", "PasswordHash", "IsAdmin", "DefaultCustomerId")
 VALUES
