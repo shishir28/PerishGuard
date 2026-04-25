@@ -12,8 +12,10 @@ except ModuleNotFoundError:
 
 try:
     from functions.customer_settings import CustomerSettingsService
+    from functions.explanation_service import ExplanationService
 except ModuleNotFoundError:
     from customer_settings import CustomerSettingsService
+    from explanation_service import ExplanationService
 
 
 def _connection_string() -> str:
@@ -38,6 +40,7 @@ class OperationsService:
     def __init__(self, connection_string: str) -> None:
         self.connection_string = connection_string
         self.settings_service = CustomerSettingsService(connection_string)
+        self.explanation_service = ExplanationService.from_environment()
 
     def acknowledge_anomaly(self, customer_id: str, event_id: int) -> dict[str, Any]:
         _require_psycopg()
@@ -144,9 +147,12 @@ class OperationsService:
                 """,
                 (customer_id, batch_id),
             )
+            settings = self.settings_service.get_settings(customer_id)
+            explanation = self.explanation_service.explain_batch(summary, anomalies, settings)
 
         return {
             "summary": summary,
+            "explanation": explanation,
             "sensorHistory": sensor_history,
             "predictionHistory": prediction_history,
             "anomalies": anomalies,

@@ -2,6 +2,12 @@
 
 PerishGuard is built as a batch-aware cold-chain monitoring system. Sensor readings arrive from IoT devices, are stored in PostgreSQL, evaluated for anomalies, scored by ONNX models, and surfaced through alerts, natural-language queries, analytics reports, and a dashboard.
 
+The intended production architecture is **ONNX-first hybrid**:
+
+- **Models score**: ONNX classifier and regressor own numeric spoilage inference.
+- **Rules guard**: deterministic anomaly detection and threshold logic protect the hot path.
+- **LLM explains**: Ollama is used for summaries, alert copy, and operator-facing reasoning, not as the authoritative scoring engine.
+
 ## System View
 
 ```text
@@ -65,6 +71,167 @@ React dashboard (PerishGuard Pulse)
   ├─ retraining controls and history
   └─ live natural-language query panel
 ```
+
+## Option 1 Component Architecture
+
+PerishGuard is easiest to reason about as three cooperating layers.
+
+### 1. Prediction layer
+
+This layer must stay deterministic, low-latency, and cheap to run at event scale.
+
+- `functions/predict_spoilage/`
+  - runtime orchestration entrypoint
+  - inserts sensor readings
+  - loads batch history
+  - builds shared features
+  - runs ONNX inference
+  - persists predictions
+- `training/features.py`
+  - shared feature contract for both training and inference
+- `training/models/`
+  - `spoilage_classifier.onnx`
+  - `shelf_life_regressor.onnx`
+  - `model_metadata.json`
+- `functions/anomaly_detection/`
+  - deterministic temperature, humidity, gas, shock, and light rules
+
+### 2. Decision-support layer
+
+This layer explains what happened and suggests next action, but does not replace the scoring decision.
+
+- `functions/nemoclaw_dispatch/`
+  - builds alert context from predictions + anomalies
+  - optionally calls Ollama for concise alert text
+  - optionally sends tasks to NemoClaw
+  - sends Slack/email alerts
+- `functions/nl_query/`
+  - customer-scoped operational Q&A and dashboard card queries
+  - uses Ollama when available, deterministic SQL fallbacks otherwise
+- Dashboard drill-down and map surfaces
+  - consume structured prediction/anomaly data and LLM-authored summaries
+
+### 3. Workflow layer
+
+This layer turns signals into operator actions and historical reporting.
+
+- `functions/ack_anomaly/`
+- `functions/batch_detail/`
+- `functions/customer_settings_api/`
+- `functions/route_overview/`
+- `functions/model_performance/`
+- `functions/model_training/`
+- `functions/analytics_batch/`
+- `functions/run_analytics/`
+- React dashboard (`dashboard/`)
+
+### Responsibility boundary
+
+Under Option 1, each layer has a strict responsibility:
+
+| Layer | Authority | Should not do |
+|---|---|---|
+| Prediction | Compute spoilage probability and hours-left | Generate free-form operational reasoning |
+| Decision support | Explain risk and recommend actions | Override primary model outputs silently |
+| Workflow | Present, route, acknowledge, report, retrain | Recompute core spoilage logic in the UI |
+
+## Request Flows
+
+### Real-time telemetry scoring flow
+
+```text
+IoT / HTTP reading
+  -> predict_spoilage / ingest_reading
+  -> normalize payload
+  -> insert SensorReadings
+  -> load customer settings
+  -> load batch history
+  -> detect deterministic anomalies
+  -> build 24-feature vector
+  -> run ONNX classifier + regressor
+  -> derive RiskLevel from probability thresholds
+  -> insert SpoilagePredictions
+  -> maybe_dispatch_alerts
+       -> optional Ollama summary
+       -> optional NemoClaw task dispatch
+       -> optional Slack/email delivery
+  -> insert AlertDispatchLog
+  -> dashboard reads updated state
+```
+
+### Dashboard operational read flow
+
+```text
+Browser
+  -> login/session
+  -> customer-scoped API request
+  -> auth_service resolves active customer
+  -> API reads PostgreSQL views/tables
+  -> dashboard renders risk queue, telemetry, anomalies, routes, performance
+```
+
+Primary read APIs:
+
+- `nl_query` for risk, anomaly, telemetry, and free-form operational questions
+- `batch_detail` for deep per-batch investigation
+- `route_overview` for map data
+- `model_performance` for post-deployment evaluation
+- `customer_settings_api` for threshold and alert controls
+
+### Explanation and operator guidance flow
+
+```text
+Prediction + anomalies + customer settings
+  -> nemoclaw_dispatch builds structured alert context
+  -> Ollama generates concise explanation / action guidance when available
+  -> deterministic fallback text is used otherwise
+  -> text is delivered to Slack/email/dashboard surfaces
+```
+
+### Retraining flow
+
+```text
+Dashboard retraining request
+  -> model_training API
+  -> ModelTrainingService loads PostgreSQL labels + readings
+  -> training/train_spoilage_model.py reusable training functions
+  -> train classifier + regressor
+  -> export ONNX + model_metadata.json
+  -> record ModelTrainingRuns
+  -> PredictionService hot-reloads metadata on next inference
+```
+
+## Codebase Changes To Formalize Option 1
+
+The current repo already mostly follows Option 1. The main work is to make that boundary explicit and consistent.
+
+### Keep as-is
+
+- ONNX models remain the authoritative inference path in `predict_spoilage`
+- `training/features.py` remains the shared feature contract
+- anomaly detection remains deterministic and inline
+- dashboard performance views continue to evaluate persisted predictions against labels
+
+### Clarify and strengthen
+
+1. **Keep LLM out of core scoring**
+   - Do not let Ollama directly assign spoilage probability or hours-left.
+   - Keep all numeric scoring inside `PredictionService` and ONNX artifacts.
+
+2. **Expose explanation as separate metadata**
+   - Add explicit response fields like `explanation`, `recommendedAction`, and `operatorSummary`
+   - Populate them in the alerting or drill-down path, not inside model inference.
+
+3. **Preserve deterministic fallback everywhere LLM is used**
+   - `nemoclaw_dispatch` and `nl_query` should always return safe, useful responses without Ollama.
+
+4. **Keep evaluation tied to persisted predictions**
+   - `vw_ModelPredictionTruth` and `vw_ModelPerformanceSummary` should remain the source of truth for model review.
+   - Any LLM-authored explanation should be treated as presentation data, not evaluation data.
+
+5. **Separate model versioning from operator guidance**
+   - `ModelTrainingRuns` and `model_metadata.json` track model changes.
+   - Guidance text should reference predictions, but not redefine model versions or evaluation metrics.
 
 ## Core Data Flow
 

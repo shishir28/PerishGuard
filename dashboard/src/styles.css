@@ -723,6 +723,38 @@ button {
   min-height: 180px;
 }
 
+.drawerInsight {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 18px;
+  padding: 18px;
+  border-radius: 20px;
+  background: var(--panel-soft-bg);
+  border: 1px solid var(--table-border);
+}
+
+.factorList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.factorPill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  color: var(--ghost-text);
+  background: var(--ghost-bg);
+  border: 1px solid var(--control-border);
+}
+
+.drawerMeta {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
 .promptStack.inline {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
