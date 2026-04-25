@@ -96,6 +96,27 @@ services:
       - ./training/models:/app/training/models
       - ./perishguard.db:/app/perishguard.db
 
+  demo-tools:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: functions/Dockerfile
+    container_name: perishguard-demo-tools
+    profiles: ["tools"]
+    depends_on:
+      functions:
+        condition: service_started
+    environment:
+      SQL_CONNECTION_STRING: "host=postgres port=5432 dbname=${POSTGRES_DB:-perishguard} user=${POSTGRES_USER:-perishguard} password=${POSTGRES_PASSWORD:-PerishGuard!2026}"
+      PG_DSN: "host=postgres port=5432 dbname=${POSTGRES_DB:-perishguard} user=${POSTGRES_USER:-perishguard} password=${POSTGRES_PASSWORD:-PerishGuard!2026}"
+      INGEST_URL: "http://functions/api/ingest-reading"
+    working_dir: /home/site/wwwroot
+    command: ["sleep", "infinity"]
+    volumes:
+      - ./training/models:/home/site/wwwroot/training/models:ro
+      - ./infra:/home/site/wwwroot/infra:ro
+      - ./perishguard.db:/home/site/wwwroot/perishguard.db:ro
+
 volumes:
   postgres-data:
   azurite-data:

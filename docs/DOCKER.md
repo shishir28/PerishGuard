@@ -12,10 +12,11 @@ PerishGuard includes Docker assets for local development and deployment rehearsa
 | `functions` | Azure Functions Python runtime | `7071` |
 | `dashboard` | React dashboard served by Nginx | `8081` |
 | `training` | Utility image to seed data and regenerate models | none |
+| `demo-tools` | Utility image for SQLite-to-Postgres bootstrap and synthetic HTTP telemetry | none |
 
 ## Platform Note
 
-The Functions service is pinned to `linux/amd64`. PostgreSQL 16 Alpine, Azurite, dashboard, and training services follow the current Compose stack.
+The Functions service is pinned to `linux/amd64`. PostgreSQL 16 Alpine, Azurite, dashboard, training, and demo-tools services follow the current Compose stack.
 
 ## Configure
 
@@ -28,6 +29,7 @@ Defaults:
 - `DISABLE_IOT_TRIGGER=true`, so the Functions app can start locally without live IoT Hub settings.
 - `OLLAMA_ENDPOINT` and `NEMOCLAW_ENDPOINT` are blank, so deterministic fallbacks are used.
 - PostgreSQL uses the local credentials from `.env`.
+- `demo-tools` targets Postgres at `postgres:5432` and the HTTP ingest shim at `http://functions/api/ingest-reading`.
 
 ## Build
 
@@ -55,7 +57,40 @@ Open:
 - Functions: `http://localhost:7071`
 - PostgreSQL: `localhost:5432`
 
-The dashboard proxies `/api/*` to the Functions container. For example, `/api/nl-query` is forwarded to the `nl_query` HTTP Function.
+The dashboard proxies `/api/*` to the Functions container. For example:
+
+- `/api/nl-query` -> `nl_query`
+- `/api/ingest-reading` -> `ingest_reading`
+- `/api/run-analytics` -> `run_analytics`
+
+## Bootstrap Demo Data
+
+Start the platform, then copy the seeded SQLite dataset into Postgres:
+
+```bash
+docker compose up -d
+docker compose --profile tools run --rm demo-tools python infra/seed_postgres_from_sqlite.py
+```
+
+This loads the existing `perishguard.db` labels and readings into PostgreSQL so the live dashboard has data immediately.
+
+## Generate Live Traffic
+
+Use the demo tools container to emit realistic sensor readings into the HTTP ingestion shim:
+
+```bash
+docker compose --profile tools run --rm demo-tools \
+  python infra/synthetic_generator.py --rate 5 --duration 60
+```
+
+Burst mode is also available:
+
+```bash
+docker compose --profile tools run --rm demo-tools \
+  python infra/synthetic_generator.py --batches 10 --readings-per-batch 30
+```
+
+The generator drives `/api/ingest-reading`, which invokes the same prediction, anomaly, and alert pipeline used by `predict_spoilage`.
 
 ## Regenerate Models
 
@@ -79,7 +114,7 @@ Set these in `.env`:
 DISABLE_IOT_TRIGGER=false
 IOT_HUB_CONNECTION=<event-hub-compatible-connection-string>
 IOT_HUB_EVENT_HUB_NAME=<event-hub-compatible-name>
-IOT_HUB_CONSUMER_GROUP=$Default
+IOT_HUB_CONSUMER_GROUP=$$Default
 ```
 
 Then restart Functions:

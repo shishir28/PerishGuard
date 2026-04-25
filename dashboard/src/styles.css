@@ -417,3 +417,10 @@ svg {
     width: auto;
   }
 }
+
+.empty { color: #6a7770; font-size: 14px; padding: 12px 4px; }
+.errorText { color: #c9472b; font-size: 14px; padding: 8px 4px; }
+.customer input {
+  background: transparent; border: none; color: inherit; width: 80px; outline: none;
+}
+.customer button { background: transparent; border: none; color: inherit; cursor: pointer; padding: 0 4px; }

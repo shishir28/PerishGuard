@@ -1,9 +1,7 @@
 -- vw_BatchRiskSummary: latest prediction per batch joined with label metadata.
 -- Used by the customer dashboard.
 
-DROP VIEW IF EXISTS "vw_BatchRiskSummary";
-
-CREATE VIEW "vw_BatchRiskSummary" AS
+CREATE OR REPLACE VIEW "vw_BatchRiskSummary" AS
 WITH "LatestPrediction" AS (
     SELECT
         p.*,

@@ -62,8 +62,8 @@ def detect_anomalies(reading: dict[str, Any], history: pd.DataFrame) -> list[Ano
         return []
 
     history = history.copy()
-    history["ReadingAt"] = pd.to_datetime(history["ReadingAt"])
-    current_at = pd.to_datetime(reading["ReadingAt"])
+    history["ReadingAt"] = pd.to_datetime(history["ReadingAt"], utc=True)
+    current_at = pd.to_datetime(reading["ReadingAt"], utc=True)
     baseline = history[history["ReadingAt"] < current_at]
     rolling = baseline[baseline["ReadingAt"] >= current_at - pd.Timedelta(hours=ROLLING_HOURS)]
 
@@ -136,7 +136,7 @@ def _rate_of_change_anomaly(reading: dict[str, Any], baseline: pd.DataFrame) -> 
     if baseline.empty:
         return None
 
-    current_at = pd.to_datetime(reading["ReadingAt"])
+    current_at = pd.to_datetime(reading["ReadingAt"], utc=True)
     window_start = current_at - pd.Timedelta(minutes=RATE_WINDOW_MINUTES)
     prior = baseline[baseline["ReadingAt"] >= window_start]
     if prior.empty:

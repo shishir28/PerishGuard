@@ -31,13 +31,14 @@ PostgreSQL
   └─ vw_BatchRiskSummary
 
 HTTP Functions
+  ├─ ingest_reading: HTTP shim into the prediction pipeline
   ├─ nl_query: guarded text-to-SQL over customer-scoped data
-  └─ analytics_batch: weekly BI report writer
+  └─ run_analytics: on-demand analytics batch execution
 
 React dashboard
-  ├─ local fallback risk queue
-  ├─ local fallback anomaly feed
-  ├─ local fallback weekly insights
+  ├─ live risk queue
+  ├─ live telemetry trend
+  ├─ live anomaly feed
   └─ live natural-language query panel
 ```
 
@@ -51,15 +52,16 @@ React dashboard
 6. ONNX models produce spoilage probability and estimated hours left.
 7. A prediction row is written to `"SpoilagePredictions"`.
 8. Alert dispatch runs when risk thresholds match agent routing rules and the batch is outside cooldown.
-9. The dashboard and natural-language endpoint read customer-scoped tables and views.
+9. The dashboard reads risk, anomaly, and telemetry views through `nl_query`, and operators can trigger weekly analytics through `run_analytics`.
 
 ## Codebase Shape
 
 - `predict_spoilage` is the runtime orchestrator and owns the hot path from telemetry event to persisted prediction.
+- `ingest_reading` is a thin HTTP wrapper around the same prediction service used by the Event Hub trigger so demos can run without IoT Hub.
 - `anomaly_detection` is a pure rules module with no storage side effects; persistence happens in `predict_spoilage`.
 - `nemoclaw_dispatch` is isolated from inference so alert generation and agent routing can degrade independently through deterministic fallback.
-- `nl_query` is the only user-facing HTTP API in the repository today.
-- `analytics_batch` is a timer-driven reporting job that writes JSONB reports for later consumption.
+- `nl_query` drives both the free-form dashboard chat and the fixed dashboard cards from PostgreSQL.
+- `analytics_batch` is a timer-driven reporting job, and `run_analytics` exposes the same service through an HTTP trigger for demos and manual runs.
 - `training/` remains intentionally separate from the production path; it uses SQLite locally, but the deployed application stack reads and writes PostgreSQL.
 
 ## Model Architecture
@@ -124,6 +126,13 @@ When `OLLAMA_ENDPOINT` is missing, deterministic fallback queries handle common 
 
 The current summaries are deterministic. Reports are currently written as global rollups with nullable `CustomerId`, even though the source data includes customer metadata.
 
+## Demo Bootstrap
+
+Local demos use two helper scripts under `infra/`:
+
+- `seed_postgres_from_sqlite.py` copies the seeded SQLite dataset into PostgreSQL.
+- `synthetic_generator.py` emits realistic telemetry into `/api/ingest-reading` on a loop so the live pipeline produces predictions, anomalies, and alerts.
+
 ## Deployment Topology
 
 Local Docker Compose includes:
@@ -134,5 +143,6 @@ Local Docker Compose includes:
 - Azure Functions Python app.
 - React dashboard served by Nginx.
 - Training utility image.
+- Demo tools container for Postgres bootstrap and synthetic traffic generation.
 
 Platform note: the Functions container is pinned to `linux/amd64`. PostgreSQL, dashboard, and training containers align with the current Compose stack.

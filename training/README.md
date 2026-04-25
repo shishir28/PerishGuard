@@ -41,6 +41,22 @@ These files are generated artifacts and ignored by Git.
 docker compose --profile tools run --rm training
 ```
 
+## Bootstrap PostgreSQL For Demos
+
+After generating `perishguard.db`, copy its seeded labels and readings into the local Postgres stack:
+
+```bash
+docker compose up -d
+docker compose --profile tools run --rm demo-tools python infra/seed_postgres_from_sqlite.py
+```
+
+To produce fresh live predictions and anomalies after the bootstrap:
+
+```bash
+docker compose --profile tools run --rm demo-tools \
+  python infra/synthetic_generator.py --rate 5 --duration 60
+```
+
 ## Data Model
 
 The local SQLite database mirrors the application tables closely enough for training and smoke tests:

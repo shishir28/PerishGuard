@@ -12,6 +12,13 @@ For Docker/local HTTP-only work, this trigger is disabled by default through:
 AzureWebJobs.predict_spoilage.Disabled=true
 ```
 
+The same pipeline is also exposed through the `functions/ingest_reading/` HTTP shim:
+
+```http
+POST /api/ingest-reading
+Content-Type: application/json
+```
+
 ## Flow
 
 1. Decode telemetry JSON.

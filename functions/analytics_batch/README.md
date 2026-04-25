@@ -12,6 +12,12 @@ Timer trigger:
 
 The Function runs every Monday at 02:00 UTC.
 
+The same analytics service is also exposed through an HTTP trigger for manual runs:
+
+```http
+POST /api/run-analytics
+```
+
 ## Reports
 
 The Function writes one JSON report per report type into `"AnalyticsReports"`:

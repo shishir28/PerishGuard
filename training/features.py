@@ -52,7 +52,7 @@ def features_for_batch(readings: pd.DataFrame, product_type: str) -> dict:
     humid = readings["Humidity"].to_numpy()
 
     # Temporal span — observation hours from first to last reading.
-    times = pd.to_datetime(readings["ReadingAt"])
+    times = pd.to_datetime(readings["ReadingAt"], utc=True)
     observation_hours = max((times.iloc[-1] - times.iloc[0]).total_seconds() / 3600, 1e-6)
 
     avg_temp = float(np.mean(temps))

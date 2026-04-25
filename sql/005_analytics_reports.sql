@@ -1,9 +1,7 @@
 -- AnalyticsReports: output of Task 5 batch analytics.
 -- ReportData stores the structured payload as JSONB.
 
-DROP TABLE IF EXISTS "AnalyticsReports" CASCADE;
-
-CREATE TABLE "AnalyticsReports" (
+CREATE TABLE IF NOT EXISTS "AnalyticsReports" (
     "ReportId"    BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     "CustomerId"  TEXT          NULL,
     "ReportType"  TEXT          NOT NULL,  -- route | carrier | packaging | seasonal | vendor
@@ -14,7 +12,7 @@ CREATE TABLE "AnalyticsReports" (
     "Summary"     TEXT          NULL       -- LLM-generated executive summary
 );
 
-CREATE INDEX "IX_AnalyticsReports_Type_GeneratedAt"
+CREATE INDEX IF NOT EXISTS "IX_AnalyticsReports_Type_GeneratedAt"
     ON "AnalyticsReports" ("ReportType", "GeneratedAt" DESC);
-CREATE INDEX "IX_AnalyticsReports_Customer_Type_GeneratedAt"
+CREATE INDEX IF NOT EXISTS "IX_AnalyticsReports_Customer_Type_GeneratedAt"
     ON "AnalyticsReports" ("CustomerId", "ReportType", "GeneratedAt" DESC);

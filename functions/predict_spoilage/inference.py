@@ -220,10 +220,17 @@ def normalize_reading(payload: dict[str, Any]) -> dict[str, Any]:
     if missing:
         raise ValueError(f"Missing required telemetry field(s): {', '.join(missing)}")
 
+    normalized["ReadingAt"] = normalize_timestamp(normalized["ReadingAt"])
+
     for key in ("Temperature", "Humidity", "Ethylene", "CO2", "NH3", "VOC", "ShockG", "LightLux"):
         normalized[key] = float(normalized[key])
 
     return normalized
+
+
+def normalize_timestamp(value: Any) -> str:
+    timestamp = pd.to_datetime(value, utc=True)
+    return timestamp.tz_localize(None).isoformat(timespec="seconds")
 
 
 def insert_sensor_reading(conn: "psycopg.Connection", reading: dict[str, Any]) -> None:
@@ -279,7 +286,7 @@ def insert_anomaly_events(conn: "psycopg.Connection", anomalies: list[AnomalyEve
 
 def insert_prediction(conn: "psycopg.Connection", result: PredictionResult, history: pd.DataFrame) -> StoredPrediction:
     history = history.copy()
-    history["ReadingAt"] = pd.to_datetime(history["ReadingAt"])
+    history["ReadingAt"] = pd.to_datetime(history["ReadingAt"], utc=True)
     latest = history["ReadingAt"].max()
     last_hour = history[history["ReadingAt"] >= latest - pd.Timedelta(hours=1)]
     last_day = history[history["ReadingAt"] >= latest - pd.Timedelta(hours=24)]

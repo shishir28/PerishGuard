@@ -11,8 +11,10 @@ Implemented locally:
 - Task 3: NemoClaw/Ollama alert dispatcher with deterministic fallback.
 - Task 4: Guarded natural-language dashboard query endpoint for PostgreSQL.
 - Task 5: Weekly analytics report generation.
+- HTTP shims for demo traffic ingestion and on-demand analytics execution.
+- Bootstrap tooling to load seeded SQLite demo data into PostgreSQL.
 - React + Vite + Recharts dashboard with Nginx proxying to Azure Functions.
-- Docker assets for PostgreSQL, Azurite, Azure Functions, dashboard, and training.
+- Docker assets for PostgreSQL, Azurite, Azure Functions, dashboard, training, and demo tooling.
 
 Validation completed:
 
@@ -25,7 +27,7 @@ Validation completed:
 
 ## Stack
 
-- Ingest: Azure IoT Hub-compatible Event Hub trigger.
+- Ingest: Azure IoT Hub-compatible Event Hub trigger plus HTTP ingestion shim for local demos.
 - Compute: Azure Functions, Python 3, ONNX Runtime.
 - Storage: PostgreSQL in the app stack; SQLite for local training and model seeding.
 - Data access: `psycopg` and PostgreSQL SQL with quoted identifiers.
@@ -36,12 +38,13 @@ Validation completed:
 
 ## Architecture Highlights
 
-- `functions/predict_spoilage/` is the ingestion entrypoint. It normalizes telemetry, stores readings in PostgreSQL, runs anomaly detection, performs ONNX inference, persists predictions, and triggers alert dispatch.
+- `functions/predict_spoilage/` is the core prediction pipeline for IoT-triggered telemetry. `functions/ingest_reading/` exposes the same pipeline over HTTP for local demos and synthetic producers.
 - `functions/anomaly_detection/` runs deterministic checks on thresholds, statistical deviation, temperature rate-of-change, and shock/light triggers before prediction is finalized.
 - `functions/nemoclaw_dispatch/` converts prediction plus anomaly context into alert copy and optional NemoClaw task dispatch, with cooldown handling and template fallback.
-- `functions/nl_query/` is the current HTTP API surface. It translates customer-scoped questions into guarded PostgreSQL `SELECT` queries, executes them with statement timeouts, and returns rows plus a summary and chart hint.
-- `functions/analytics_batch/` generates weekly JSON reports from shipment labels and latest risk summaries and stores them in `AnalyticsReports`.
-- `dashboard/` is currently a hybrid UI: the natural-language panel calls the live backend, while risk, trend, anomaly, and insight widgets still use local fallback data.
+- `functions/nl_query/` powers the dashboard cards and chat with customer-scoped PostgreSQL `SELECT` queries, statement timeouts, and deterministic fallbacks when Ollama is unavailable.
+- `functions/analytics_batch/` generates weekly JSON reports from shipment labels and latest risk summaries, while `functions/run_analytics/` exposes the same batch service through `POST /api/run-analytics`.
+- `infra/seed_postgres_from_sqlite.py` loads the seeded SQLite demo dataset into PostgreSQL, and `infra/synthetic_generator.py` emits realistic telemetry into `/api/ingest-reading`.
+- `dashboard/` now renders risk, telemetry, anomalies, and chat from live API responses instead of embedded mock data.
 
 ## Layout
 
@@ -49,16 +52,20 @@ Validation completed:
 PerishGuard/
 ├── architecture.md                  # System architecture
 ├── docker-compose.yml               # Local container stack
+├── perishguard.db                   # Local SQLite seed source for training/bootstrap
 ├── sql/                             # PostgreSQL schema and view definitions
 ├── training/                        # Synthetic data, features, training, ONNX export
 │   └── models/                      # Generated model artifacts, ignored except .gitkeep
 ├── functions/
 │   ├── predict_spoilage/            # IoT ingestion, anomaly integration, ONNX prediction
+│   ├── ingest_reading/              # HTTP shim into the same prediction pipeline
 │   ├── anomaly_detection/           # Task 2 detector
 │   ├── nemoclaw_dispatch/           # Task 3 alert dispatcher
 │   ├── nl_query/                    # Task 4 HTTP query endpoint
-│   └── analytics_batch/             # Task 5 timer endpoint
+│   ├── analytics_batch/             # Task 5 timer endpoint
+│   └── run_analytics/               # HTTP trigger for on-demand analytics
 ├── dashboard/                       # React dashboard and Nginx packaging
+├── infra/                           # Postgres init helper and demo utility scripts
 ├── infra/docker/postgres/           # Postgres init helper
 └── docs/                            # Implementation and Docker notes
 ```
@@ -88,6 +95,8 @@ Docker:
 cp .env.example .env
 docker compose build
 docker compose up -d
+docker compose --profile tools run --rm demo-tools python infra/seed_postgres_from_sqlite.py
+docker compose --profile tools run --rm demo-tools python infra/synthetic_generator.py --rate 5 --duration 60
 ```
 
 Dashboard URL in Docker: `http://localhost:8081`.

@@ -5,16 +5,16 @@ The dashboard is a React + Vite + Recharts operations view for PerishGuard.
 ## Features
 
 - Risk queue for active batches.
-- Temperature and risk trend chart.
+- Temperature trend chart.
 - Live anomaly feed.
-- Weekly business insights.
 - Natural-language question panel that calls `/api/nl-query`.
+- Customer switcher in the header for live customer-scoped queries.
 
 Current wiring:
 
-- The natural-language panel is live and proxies to the `nl_query` Azure Function.
-- The risk queue, telemetry trend, anomaly feed, and weekly insights still render local fallback data defined in `src/main.jsx`.
-- The current customer context is hard-coded to `C010` in the UI.
+- The risk queue, telemetry trend, anomaly feed, and question panel all call `/api/nl-query`.
+- The dashboard reads live PostgreSQL-backed data through the Functions app.
+- The initial customer comes from the `?customer=` query parameter when present, otherwise it defaults to `C010`.
 
 ## Local Development
 
@@ -44,4 +44,4 @@ docker compose up -d dashboard
 
 Open `http://localhost:8081`.
 
-Nginx proxies `/api/*` to the Functions container, so `/api/nl-query` reaches the `nl_query` HTTP Function when the full compose stack is running.
+Nginx proxies `/api/*` to the Functions container, so the dashboard can reach `/api/nl-query`, `/api/ingest-reading`, and `/api/run-analytics` when the full compose stack is running.

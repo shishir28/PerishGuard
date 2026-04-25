@@ -11,8 +11,8 @@ Current platform note: the application runtime targets PostgreSQL through `psyco
 | 1 | Spoilage prediction, LightGBM to ONNX | Implemented | `training/`, `functions/predict_spoilage/` |
 | 2 | Real-time anomaly detection | Implemented | `functions/anomaly_detection/` |
 | 3 | NemoClaw multi-agent alerts | Implemented with fallback | `functions/nemoclaw_dispatch/` |
-| 4 | Natural-language dashboard queries | Implemented with guardrails | `functions/nl_query/`, `dashboard/` |
-| 5 | Business intelligence analytics | Implemented | `functions/analytics_batch/` |
+| 4 | Natural-language dashboard queries | Implemented with guardrails and live dashboard wiring | `functions/nl_query/`, `dashboard/` |
+| 5 | Business intelligence analytics | Implemented with timer and HTTP trigger | `functions/analytics_batch/`, `functions/run_analytics/` |
 
 ## Task 1: Spoilage Prediction
 
@@ -94,7 +94,8 @@ Implemented:
 - Uses Ollama for PostgreSQL SQL generation and result summarization when configured.
 - Uses deterministic fallback queries when Ollama is unavailable.
 - Returns SQL, rows, summary, and chart suggestion.
-- React dashboard includes a natural-language query panel.
+- React dashboard uses the same API for risk, anomaly, telemetry, and chat views.
+- Customer context is selected in the UI and can also be prefilled with `?customer=<id>`.
 
 Guardrails:
 
@@ -121,8 +122,9 @@ Output table: `"AnalyticsReports"`.
 Runtime:
 
 - Timer Function runs Mondays at 02:00 UTC.
+- HTTP Function also allows on-demand runs through `/api/run-analytics`.
 - Writes JSON payload and deterministic summary per report type.
-- Dashboard includes a weekly insights section with charts and key signals, though the current UI still renders fallback data for that panel.
+- Reports are available for downstream consumption, while the current dashboard focuses on live risk, telemetry, anomaly, and chat views.
 
 ## Dockerization
 
@@ -135,6 +137,7 @@ Implemented:
 - Azure Functions image.
 - Dashboard Nginx image.
 - Training utility image.
+- Demo tools utility image for SQLite-to-Postgres bootstrap and synthetic ingestion traffic.
 
 Platform note: the Functions container is pinned to `linux/amd64`. The PostgreSQL, dashboard, and training services match the current Compose stack.
 
@@ -146,3 +149,11 @@ Platform note: the Functions container is pinned to `linux/amd64`. The PostgreSQ
 - Configure real Ollama and NemoClaw endpoints over Tailscale.
 - Add authentication and authorization for dashboard and HTTP Functions.
 - Add automated tests and CI.
+
+## Demo And Bootstrap Utilities
+
+Implemented:
+
+- `functions/ingest_reading/` exposes the prediction pipeline over HTTP at `/api/ingest-reading`.
+- `infra/seed_postgres_from_sqlite.py` loads the existing `perishguard.db` seed data into PostgreSQL.
+- `infra/synthetic_generator.py` emits realistic telemetry on a loop so the live pipeline can be demonstrated without IoT Hub.

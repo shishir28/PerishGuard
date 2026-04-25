@@ -2,9 +2,7 @@
 -- One row per batch. ActualSpoilageAt is NULL for batches that completed
 -- shelf life without spoiling.
 
-DROP TABLE IF EXISTS "SpoilageLabels" CASCADE;
-
-CREATE TABLE "SpoilageLabels" (
+CREATE TABLE IF NOT EXISTS "SpoilageLabels" (
     "BatchId"          TEXT          NOT NULL PRIMARY KEY,
     "CustomerId"       TEXT          NOT NULL,
     "ProductType"      TEXT          NOT NULL,
@@ -22,7 +20,7 @@ CREATE TABLE "SpoilageLabels" (
     "CreatedAt"        TIMESTAMP(0)  NOT NULL DEFAULT (now() AT TIME ZONE 'utc')
 );
 
-CREATE INDEX "IX_SpoilageLabels_ProductType" ON "SpoilageLabels" ("ProductType");
-CREATE INDEX "IX_SpoilageLabels_CustomerId"  ON "SpoilageLabels" ("CustomerId");
-CREATE INDEX "IX_SpoilageLabels_Route"       ON "SpoilageLabels" ("Origin", "Destination");
-CREATE INDEX "IX_SpoilageLabels_Carrier"     ON "SpoilageLabels" ("Carrier");
+CREATE INDEX IF NOT EXISTS "IX_SpoilageLabels_ProductType" ON "SpoilageLabels" ("ProductType");
+CREATE INDEX IF NOT EXISTS "IX_SpoilageLabels_CustomerId"  ON "SpoilageLabels" ("CustomerId");
+CREATE INDEX IF NOT EXISTS "IX_SpoilageLabels_Route"       ON "SpoilageLabels" ("Origin", "Destination");
+CREATE INDEX IF NOT EXISTS "IX_SpoilageLabels_Carrier"     ON "SpoilageLabels" ("Carrier");

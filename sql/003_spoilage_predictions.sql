@@ -1,9 +1,7 @@
 -- SpoilagePredictions: inference output. Written by the predict_spoilage
 -- Azure Function. RiskLevel is a generated column from SpoilageProbability.
 
-DROP TABLE IF EXISTS "SpoilagePredictions" CASCADE;
-
-CREATE TABLE "SpoilagePredictions" (
+CREATE TABLE IF NOT EXISTS "SpoilagePredictions" (
     "PredictionId"        BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     "BatchId"             TEXT          NOT NULL,
     "CustomerId"          TEXT          NOT NULL,
@@ -33,9 +31,9 @@ CREATE TABLE "SpoilagePredictions" (
     "AlertChannel"        TEXT          NULL
 );
 
-CREATE INDEX "IX_SpoilagePredictions_BatchId_PredictedAt"
+CREATE INDEX IF NOT EXISTS "IX_SpoilagePredictions_BatchId_PredictedAt"
     ON "SpoilagePredictions" ("BatchId", "PredictedAt" DESC);
-CREATE INDEX "IX_SpoilagePredictions_CustomerId_PredictedAt"
+CREATE INDEX IF NOT EXISTS "IX_SpoilagePredictions_CustomerId_PredictedAt"
     ON "SpoilagePredictions" ("CustomerId", "PredictedAt" DESC);
-CREATE INDEX "IX_SpoilagePredictions_RiskLevel"
+CREATE INDEX IF NOT EXISTS "IX_SpoilagePredictions_RiskLevel"
     ON "SpoilagePredictions" ("RiskLevel") WHERE "RiskLevel" IN ('HIGH','CRITICAL');

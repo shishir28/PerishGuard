@@ -1,8 +1,6 @@
 -- AnomalyEvents: per-reading anomaly flags from Task 2.
 
-DROP TABLE IF EXISTS "AnomalyEvents" CASCADE;
-
-CREATE TABLE "AnomalyEvents" (
+CREATE TABLE IF NOT EXISTS "AnomalyEvents" (
     "EventId"        BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     "BatchId"        TEXT          NOT NULL,
     "CustomerId"     TEXT          NOT NULL,
@@ -18,9 +16,9 @@ CREATE TABLE "AnomalyEvents" (
     "Acknowledged"   SMALLINT      NOT NULL DEFAULT 0
 );
 
-CREATE INDEX "IX_AnomalyEvents_BatchId_DetectedAt"
+CREATE INDEX IF NOT EXISTS "IX_AnomalyEvents_BatchId_DetectedAt"
     ON "AnomalyEvents" ("BatchId", "DetectedAt" DESC);
-CREATE INDEX "IX_AnomalyEvents_CustomerId_DetectedAt"
+CREATE INDEX IF NOT EXISTS "IX_AnomalyEvents_CustomerId_DetectedAt"
     ON "AnomalyEvents" ("CustomerId", "DetectedAt" DESC);
-CREATE INDEX "IX_AnomalyEvents_Severity"
+CREATE INDEX IF NOT EXISTS "IX_AnomalyEvents_Severity"
     ON "AnomalyEvents" ("Severity") WHERE "Severity" = 'CRITICAL';

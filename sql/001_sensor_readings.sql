@@ -2,9 +2,7 @@
 -- One row per device reading. Gas/shock/light columns are nullable so devices
 -- with different sensor packages can write partial rows.
 
-DROP TABLE IF EXISTS "SensorReadings" CASCADE;
-
-CREATE TABLE "SensorReadings" (
+CREATE TABLE IF NOT EXISTS "SensorReadings" (
     "ReadingId"     BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     "BatchId"       TEXT          NOT NULL,
     "CustomerId"    TEXT          NOT NULL,
@@ -22,9 +20,9 @@ CREATE TABLE "SensorReadings" (
     "IngestedAt"    TIMESTAMP(0)  NOT NULL DEFAULT (now() AT TIME ZONE 'utc')
 );
 
-CREATE INDEX "IX_SensorReadings_BatchId_ReadingAt"
+CREATE INDEX IF NOT EXISTS "IX_SensorReadings_BatchId_ReadingAt"
     ON "SensorReadings" ("BatchId", "ReadingAt");
-CREATE INDEX "IX_SensorReadings_CustomerId_ReadingAt"
+CREATE INDEX IF NOT EXISTS "IX_SensorReadings_CustomerId_ReadingAt"
     ON "SensorReadings" ("CustomerId", "ReadingAt");
-CREATE INDEX "IX_SensorReadings_DeviceId_ReadingAt"
+CREATE INDEX IF NOT EXISTS "IX_SensorReadings_DeviceId_ReadingAt"
     ON "SensorReadings" ("DeviceId", "ReadingAt");
