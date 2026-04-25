@@ -1,0 +1,101 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: perishguard-postgres
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB:-perishguard}"
+      POSTGRES_USER: "${POSTGRES_USER:-perishguard}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-PerishGuard!2026}"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-perishguard} -d ${POSTGRES_DB:-perishguard}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  sql-init:
+    image: postgres:16-alpine
+    container_name: perishguard-sql-init
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: "${POSTGRES_DB:-perishguard}"
+      POSTGRES_USER: "${POSTGRES_USER:-perishguard}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-PerishGuard!2026}"
+    volumes:
+      - ./sql:/sql:ro
+      - ./infra/docker/postgres/init.sh:/init.sh:ro
+    entrypoint: ["/bin/sh", "/init.sh"]
+    restart: "no"
+
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:3.34.0
+    container_name: perishguard-azurite
+    command: azurite --blobHost 0.0.0.0 --queueHost 0.0.0.0 --tableHost 0.0.0.0
+    ports:
+      - "10000:10000"
+      - "10001:10001"
+      - "10002:10002"
+    volumes:
+      - azurite-data:/data
+
+  functions:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: functions/Dockerfile
+    container_name: perishguard-functions
+    depends_on:
+      sql-init:
+        condition: service_completed_successfully
+      azurite:
+        condition: service_started
+    environment:
+      AzureWebJobsStorage: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNo/Y7fo4K0UKtnEVXP4r0Z8ubEvhONpmew5c9F4dKJF6X1AAU7obHEtdTpi3oTy8YhEGsnDVn6A==;BlobEndpoint=http://azurite:10000/devstoreaccount1;QueueEndpoint=http://azurite:10001/devstoreaccount1;TableEndpoint=http://azurite:10002/devstoreaccount1;"
+      FUNCTIONS_WORKER_RUNTIME: python
+      AzureWebJobsFeatureFlags: EnableWorkerIndexing
+      AzureWebJobs.predict_spoilage.Disabled: "${DISABLE_IOT_TRIGGER:-true}"
+      SQL_CONNECTION_STRING: "host=postgres port=5432 dbname=${POSTGRES_DB:-perishguard} user=${POSTGRES_USER:-perishguard} password=${POSTGRES_PASSWORD:-PerishGuard!2026}"
+      MODEL_DIR: /home/site/wwwroot/training/models
+      IOT_HUB_CONNECTION: "${IOT_HUB_CONNECTION:-}"
+      IOT_HUB_EVENT_HUB_NAME: "${IOT_HUB_EVENT_HUB_NAME:-telemetry}"
+      IOT_HUB_CONSUMER_GROUP: "${IOT_HUB_CONSUMER_GROUP:-$$Default}"
+      OLLAMA_ENDPOINT: "${OLLAMA_ENDPOINT:-}"
+      OLLAMA_MODEL: "${OLLAMA_MODEL:-llama3.3:70b}"
+      NEMOCLAW_ENDPOINT: "${NEMOCLAW_ENDPOINT:-}"
+      ALERT_COOLDOWN_MINUTES: "${ALERT_COOLDOWN_MINUTES:-30}"
+    ports:
+      - "7071:80"
+    volumes:
+      - ./training/models:/home/site/wwwroot/training/models:ro
+
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    container_name: perishguard-dashboard
+    depends_on:
+      - functions
+    ports:
+      - "8081:80"
+
+  training:
+    build:
+      context: .
+      dockerfile: training/Dockerfile
+    container_name: perishguard-training
+    profiles: ["tools"]
+    volumes:
+      - ./training/models:/app/training/models
+      - ./perishguard.db:/app/perishguard.db
+
+volumes:
+  postgres-data:
+  azurite-data:

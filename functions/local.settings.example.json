@@ -1,0 +1,16 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "python",
+    "IOT_HUB_CONNECTION": "<event-hub-compatible-iot-hub-connection-string>",
+    "IOT_HUB_EVENT_HUB_NAME": "<event-hub-compatible-name>",
+    "IOT_HUB_CONSUMER_GROUP": "$Default",
+    "SQL_CONNECTION_STRING": "Driver={ODBC Driver 18 for SQL Server};Server=<server>;Database=<db>;Uid=<user>;Pwd=<password>;Encrypt=yes;TrustServerCertificate=no;",
+    "MODEL_DIR": "../training/models",
+    "OLLAMA_ENDPOINT": "http://<tailscale-ip>:11434",
+    "OLLAMA_MODEL": "llama3.3:70b",
+    "NEMOCLAW_ENDPOINT": "http://<tailscale-ip>:8080",
+    "ALERT_COOLDOWN_MINUTES": "30"
+  }
+}

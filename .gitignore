@@ -1,0 +1,68 @@
+# Python
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# Local databases (dev only — real data lives in SQL Server)
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.sqlite-journal
+
+# Trained artefacts (regenerate with `python training/train_spoilage_model.py`)
+training/models/*.onnx
+training/models/*.json
+!training/models/.gitkeep
+
+# Node / frontend
+node_modules/
+dashboard/node_modules/
+dashboard/dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.vite/
+
+# Azure Functions local files
+local.settings.json
+functions/local.settings.json
+.python_packages/
+
+# Env / secrets
+.env
+.env.local
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+*.crt
+*.pfx
+*.p12
+
+# Logs
+*.log
+logs/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+.claude/
+*.swp
+*.swo
