@@ -144,6 +144,16 @@ function App() {
   const activeSession = session.data?.session ?? null;
   const customerId = activeSession?.activeCustomerId ?? '';
   const isAuthed = Boolean(token && activeSession);
+  const sessionError = session.error || '';
+  const lowerSessionError = sessionError.toLowerCase();
+  const hasRecoverableSessionError = Boolean(
+    token
+    && !activeSession
+    && session.status === 'error'
+    && sessionError
+    && !lowerSessionError.includes('session')
+    && !lowerSessionError.includes('bearer token'),
+  );
   const resolvedTheme = themePreference === 'system' ? systemTheme : themePreference;
   const chartPalette = useMemo(
     () => ({
@@ -223,15 +233,30 @@ function App() {
     { enabled: isAuthed },
   );
 
+  const alertActivity = useApiResource(
+    useCallback(() => fetchJson('/api/alerts/activity', { token }), [token]),
+    { enabled: isAuthed },
+  );
+
   useEffect(() => {
     if (!token || session.status !== 'error') {
       return;
     }
-    if ((session.error || '').toLowerCase().includes('session')) {
+    if (lowerSessionError.includes('session') || lowerSessionError.includes('bearer token')) {
       window.localStorage.removeItem(SESSION_STORAGE_KEY);
       setToken('');
     }
-  }, [session.error, session.status, token]);
+  }, [lowerSessionError, session.status, token]);
+
+  useEffect(() => {
+    if (!hasRecoverableSessionError) {
+      return undefined;
+    }
+    const retryHandle = window.setTimeout(() => {
+      session.refresh();
+    }, 1500);
+    return () => window.clearTimeout(retryHandle);
+  }, [hasRecoverableSessionError, session.refresh]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -328,6 +353,11 @@ function App() {
   const performanceOverview = performance.data?.overview ?? {};
   const routeRows = routeOverview.data?.routes ?? [];
   const runRows = trainingRuns.data?.runs ?? [];
+  const alertOverview = alertActivity.data?.overview ?? {};
+  const alertChannels = alertActivity.data?.channels ?? [];
+  const recentAlertAttempts = alertActivity.data?.recentAttempts ?? [];
+  const failedAlertCount = Number(alertOverview.FailedCount) || 0;
+  const skippedAlertCount = (Number(alertOverview.SkippedCount) || 0) + (Number(alertOverview.SuppressedCount) || 0);
 
   const filteredRiskRows = useMemo(() => {
     const query = searchText.trim().toLowerCase();
@@ -453,6 +483,7 @@ function App() {
       routeOverview.refresh(),
       customerSettings.refresh(),
       trainingRuns.refresh(),
+      alertActivity.refresh(),
     ]);
   }
 
@@ -536,6 +567,7 @@ function App() {
     routeOverview.refresh();
     customerSettings.refresh();
     trainingRuns.refresh();
+    alertActivity.refresh();
     if (selectedBatchId) {
       batchDetail.refresh();
     }
@@ -604,12 +636,35 @@ function App() {
     );
   }
 
-  if (session.status === 'loading' && !activeSession) {
+  if (token && !activeSession && (session.status === 'loading' || session.status === 'refreshing' || hasRecoverableSessionError)) {
     return (
       <main className="loginPage">
         <section className="loginCard centeredCard">
-          <h2>Loading session…</h2>
-          <p className="sectionSubtitle">Syncing your routes, alerts, and customer context.</p>
+          <h2>{hasRecoverableSessionError ? 'Reconnecting session…' : 'Loading session…'}</h2>
+          <p className="sectionSubtitle">
+            {hasRecoverableSessionError
+              ? 'The API is still coming online. Retrying your customer context automatically.'
+              : 'Syncing your routes, alerts, and customer context.'}
+          </p>
+        </section>
+      </main>
+    );
+  }
+
+  if (token && !activeSession) {
+    return (
+      <main className="loginPage">
+        <section className="loginCard centeredCard">
+          <h2>Session unavailable</h2>
+          <p className="sectionSubtitle">{sessionError || 'Unable to load your saved session.'}</p>
+          <div className="buttonRow">
+            <button type="button" className="primaryButton" onClick={session.refresh}>
+              Retry session
+            </button>
+            <button type="button" className="ghostButton" onClick={handleLogout}>
+              Sign out
+            </button>
+          </div>
         </section>
       </main>
     );
@@ -1013,46 +1068,97 @@ function App() {
               </PanelBody>
             </section>
 
-            <section className="contentPanel">
-              <SectionHeader eyebrow="MLOps" title="Retraining loop" subtitle="Retrain from PostgreSQL labels and hot-reload the live ONNX bundle." />
-              <div className="formActions">
-                <button
-                  type="button"
-                  className="primaryButton"
-                  disabled={trainingState.status === 'running'}
-                  onClick={() => triggerRetraining('global')}
-                >
-                  {trainingState.status === 'running' ? 'Retraining…' : 'Retrain global model'}
-                </button>
-                <button
-                  type="button"
-                  className="ghostButton"
-                  disabled={trainingState.status === 'running'}
-                  onClick={() => triggerRetraining('customer')}
-                >
-                  Retrain active customer model
-                </button>
-              </div>
-              {trainingState.error && <p className="errorText">{trainingState.error}</p>}
-              {trainingState.result && (
-                <div className="trainingSummary">
-                  <strong>{trainingState.result.modelVersion}</strong>
-                  <span>
-                    ROC-AUC {trainingState.result.metrics?.cv_metrics?.classifier_roc_auc ?? '—'} · MAE {trainingState.result.metrics?.cv_metrics?.regressor_mae_hours ?? '—'}h
-                  </span>
+            <div className="controlsSidebar">
+              <section className="contentPanel">
+                <SectionHeader
+                  eyebrow="Alert delivery"
+                  title="Dispatch activity"
+                  subtitle="See what sent, failed, or was skipped for the active customer over the last 7 days."
+                />
+                <PanelBody state={alertActivity}>
+                  <div className="heroMetrics compact">
+                    <HeroMetric label="Attempts (7d)" value={alertOverview.TotalAttempts ?? 0} tone="neutral" />
+                    <HeroMetric label="Sent" value={alertOverview.SentCount ?? 0} tone="success" />
+                    <HeroMetric label="Failed" value={failedAlertCount} tone={failedAlertCount > 0 ? 'danger' : 'neutral'} />
+                    <HeroMetric
+                      label="Skipped / suppressed"
+                      value={skippedAlertCount}
+                      tone={skippedAlertCount > 0 ? 'warn' : 'neutral'}
+                    />
+                  </div>
+                  <div className="detailSplit detailSplitStacked">
+                    <SimpleTable
+                      eyebrow="Channel health"
+                      title="Attempts by channel"
+                      columns={['Channel', 'Attempts', 'Sent', 'Failed', 'Skipped']}
+                      rows={alertChannels.map((channel) => [
+                        channel.Channel,
+                        channel.AttemptCount,
+                        channel.SentCount,
+                        channel.FailedCount,
+                        (Number(channel.SkippedCount) || 0) + (Number(channel.SuppressedCount) || 0),
+                      ])}
+                    />
+                    <StackList
+                      eyebrow="Recent activity"
+                      title="Latest deliveries"
+                      rows={recentAlertAttempts.map((entry) => ({
+                        key: entry.LogId,
+                        title: `${entry.Channel} · ${entry.BatchId}`,
+                        subtitle: `${formatTimestamp(entry.AttemptedAt)} · ${entry.Provider || 'system'} · ${entry.Target || 'target n/a'}${entry.ErrorMessage ? ` · ${entry.ErrorMessage}` : ''}`,
+                        status: entry.DeliveryStatus,
+                      }))}
+                    />
+                  </div>
+                  {!recentAlertAttempts.length && (
+                    <p className="sectionSubtitle">
+                      No alert dispatch attempts have been recorded for this customer yet. Once alerts fire, this panel will show the target, channel, and any delivery error.
+                    </p>
+                  )}
+                </PanelBody>
+              </section>
+
+              <section className="contentPanel">
+                <SectionHeader eyebrow="MLOps" title="Retraining loop" subtitle="Retrain from PostgreSQL labels and hot-reload the live ONNX bundle." />
+                <div className="formActions">
+                  <button
+                    type="button"
+                    className="primaryButton"
+                    disabled={trainingState.status === 'running'}
+                    onClick={() => triggerRetraining('global')}
+                  >
+                    {trainingState.status === 'running' ? 'Retraining…' : 'Retrain global model'}
+                  </button>
+                  <button
+                    type="button"
+                    className="ghostButton"
+                    disabled={trainingState.status === 'running'}
+                    onClick={() => triggerRetraining('customer')}
+                  >
+                    Retrain active customer model
+                  </button>
                 </div>
-              )}
-              <StackList
-                eyebrow="Training history"
-                title="Recent runs"
-                rows={runRows.map((run) => ({
-                  key: run.RunId,
-                  title: `${run.ModelVersion || 'Pending version'} · ${run.Status}`,
-                  subtitle: `${formatTimestamp(run.StartedAt)}${run.CompletedAt ? ` → ${formatTimestamp(run.CompletedAt)}` : ''}`,
-                  status: run.Status,
-                }))}
-              />
-            </section>
+                {trainingState.error && <p className="errorText">{trainingState.error}</p>}
+                {trainingState.result && (
+                  <div className="trainingSummary">
+                    <strong>{trainingState.result.modelVersion}</strong>
+                    <span>
+                      ROC-AUC {trainingState.result.metrics?.cv_metrics?.classifier_roc_auc ?? '—'} · MAE {trainingState.result.metrics?.cv_metrics?.regressor_mae_hours ?? '—'}h
+                    </span>
+                  </div>
+                )}
+                <StackList
+                  eyebrow="Training history"
+                  title="Recent runs"
+                  rows={runRows.map((run) => ({
+                    key: run.RunId,
+                    title: `${run.ModelVersion || 'Pending version'} · ${run.Status}`,
+                    subtitle: `${formatTimestamp(run.StartedAt)}${run.CompletedAt ? ` → ${formatTimestamp(run.CompletedAt)}` : ''}`,
+                    status: run.Status,
+                  }))}
+                />
+              </section>
+            </div>
           </section>
         )}
       </main>

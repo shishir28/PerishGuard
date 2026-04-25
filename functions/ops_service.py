@@ -208,6 +208,64 @@ class OperationsService:
             "recentBatches": recent_batches,
         }
 
+    def alert_activity(self, customer_id: str) -> dict[str, Any]:
+        _require_psycopg()
+        with psycopg.connect(self.connection_string, autocommit=True) as conn:
+            overview = self._fetch_one(
+                conn,
+                """
+                SELECT
+                    COUNT(*) AS "TotalAttempts",
+                    COALESCE(SUM(CASE WHEN "DeliveryStatus" = 'sent' THEN 1 ELSE 0 END), 0) AS "SentCount",
+                    COALESCE(SUM(CASE WHEN "DeliveryStatus" = 'failed' THEN 1 ELSE 0 END), 0) AS "FailedCount",
+                    COALESCE(SUM(CASE WHEN "DeliveryStatus" = 'skipped' THEN 1 ELSE 0 END), 0) AS "SkippedCount",
+                    COALESCE(SUM(CASE WHEN "DeliveryStatus" = 'suppressed' THEN 1 ELSE 0 END), 0) AS "SuppressedCount",
+                    MAX("AttemptedAt") AS "LastAttemptedAt"
+                FROM "AlertDispatchLog"
+                WHERE "CustomerId" = %s
+                  AND "AttemptedAt" >= (now() AT TIME ZONE 'utc') - INTERVAL '7 days'
+                """,
+                (customer_id,),
+            ) or {}
+            channel_breakdown = self._fetch_all(
+                conn,
+                """
+                SELECT
+                    "Channel",
+                    COUNT(*) AS "AttemptCount",
+                    SUM(CASE WHEN "DeliveryStatus" = 'sent' THEN 1 ELSE 0 END) AS "SentCount",
+                    SUM(CASE WHEN "DeliveryStatus" = 'failed' THEN 1 ELSE 0 END) AS "FailedCount",
+                    SUM(CASE WHEN "DeliveryStatus" = 'skipped' THEN 1 ELSE 0 END) AS "SkippedCount",
+                    SUM(CASE WHEN "DeliveryStatus" = 'suppressed' THEN 1 ELSE 0 END) AS "SuppressedCount",
+                    MAX("AttemptedAt") AS "LastAttemptedAt"
+                FROM "AlertDispatchLog"
+                WHERE "CustomerId" = %s
+                  AND "AttemptedAt" >= (now() AT TIME ZONE 'utc') - INTERVAL '7 days'
+                GROUP BY "Channel"
+                ORDER BY "AttemptCount" DESC, "Channel"
+                """,
+                (customer_id,),
+            )
+            recent_attempts = self._fetch_all(
+                conn,
+                """
+                SELECT
+                    "LogId", "AttemptedAt", "BatchId", "Channel", "DeliveryStatus",
+                    "Provider", "Target", "TaskCount", "ErrorMessage", "AlertText"
+                FROM "AlertDispatchLog"
+                WHERE "CustomerId" = %s
+                ORDER BY "AttemptedAt" DESC
+                LIMIT 20
+                """,
+                (customer_id,),
+            )
+        return {
+            "window": "7d",
+            "overview": overview,
+            "channels": channel_breakdown,
+            "recentAttempts": recent_attempts,
+        }
+
     def customer_settings(self, customer_id: str) -> dict[str, Any]:
         return self.settings_service.get_settings(customer_id)
 
