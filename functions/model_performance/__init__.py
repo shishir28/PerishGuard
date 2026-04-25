@@ -2,47 +2,15 @@
 
 from __future__ import annotations
 
-import json
-import logging
-
 try:
-    import azure.functions as func
+    from functions._http import authenticated, current_session, json_response
+    from functions.service_factory import operations_service
 except ModuleNotFoundError:
-    func = None
-
-try:
-    from functions.auth_service import require_session
-    from functions.ops_service import OperationsService
-except ModuleNotFoundError:
-    from auth_service import require_session
-    from ops_service import OperationsService
+    from _http import authenticated, current_session, json_response
+    from service_factory import operations_service
 
 
-_SERVICE: OperationsService | None = None
-
-
-def _service() -> OperationsService:
-    global _SERVICE
-    if _SERVICE is None:
-        _SERVICE = OperationsService.from_environment()
-    return _SERVICE
-
-
-def main(req: "func.HttpRequest") -> "func.HttpResponse":
-    try:
-        context = require_session(req)
-        result = _service().model_performance(context.active_customer_id)
-        return _json(result, 200)
-    except PermissionError as exc:
-        return _json({"error": str(exc)}, 401)
-    except Exception:
-        logging.exception("model_performance failed")
-        return _json({"error": "Failed to load model performance"}, 500)
-
-
-def _json(payload: dict[str, object], status: int) -> "func.HttpResponse":
-    return func.HttpResponse(
-        json.dumps(payload, default=str),
-        status_code=status,
-        mimetype="application/json",
-    )
+@authenticated
+def main(req):
+    ctx = current_session()
+    return json_response(operations_service().model_performance(ctx.active_customer_id))

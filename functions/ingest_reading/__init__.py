@@ -7,18 +7,13 @@ detect anomalies, run ONNX inference, persist prediction, dispatch alert.
 
 from __future__ import annotations
 
-import json
-import logging
 from dataclasses import asdict
 
 try:
-    import azure.functions as func
-except ModuleNotFoundError:
-    func = None
-
-try:
+    from functions._http import anonymous, json_response, parse_json
     from functions.predict_spoilage.inference import PredictionService
 except ModuleNotFoundError:
+    from _http import anonymous, json_response, parse_json
     from predict_spoilage.inference import PredictionService
 
 
@@ -32,25 +27,7 @@ def _service() -> PredictionService:
     return _SERVICE
 
 
-def main(req: "func.HttpRequest") -> "func.HttpResponse":
-    try:
-        payload = req.get_json()
-    except ValueError:
-        return _json({"error": "request body must be JSON"}, 400)
-
-    try:
-        result = _service().process_reading(payload)
-        return _json(asdict(result), 200)
-    except ValueError as exc:
-        return _json({"error": str(exc)}, 400)
-    except Exception as exc:
-        logging.exception("ingest_reading failed")
-        return _json({"error": str(exc)}, 500)
-
-
-def _json(payload: dict, status: int) -> "func.HttpResponse":
-    return func.HttpResponse(
-        json.dumps(payload, default=str),
-        status_code=status,
-        mimetype="application/json",
-    )
+@anonymous
+def main(req):
+    payload = parse_json(req)
+    return json_response(asdict(_service().process_reading(payload)))

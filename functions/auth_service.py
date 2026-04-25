@@ -118,7 +118,12 @@ class AuthService:
                 if row is None or not verify_password(password, str(row[3])):
                     raise PermissionError("Invalid email or password")
 
-                customers = self._load_customer_access(cur, str(row[0]))
+                customers = self._load_customer_access(
+                    cur,
+                    str(row[0]),
+                    is_admin=bool(row[4]),
+                    default_customer_id=str(row[5]) if row[5] is not None else "",
+                )
                 default_customer_id = str(row[5]) if row[5] is not None else ""
                 active_customer_id = self._pick_active_customer(default_customer_id, customers)
                 token = secrets.token_urlsafe(32)
@@ -147,7 +152,8 @@ class AuthService:
                         s."ExpiresAt",
                         u."Email",
                         u."DisplayName",
-                        u."IsAdmin"
+                        u."IsAdmin",
+                        u."DefaultCustomerId"
                     FROM "UserSessions" s
                     JOIN "AppUsers" u ON u."UserId" = s."UserId"
                     WHERE s."SessionTokenHash" = %s
@@ -162,7 +168,12 @@ class AuthService:
                     cur.execute('DELETE FROM "UserSessions" WHERE "SessionTokenHash" = %s', (_hash_token(token),))
                     conn.commit()
                     raise PermissionError("Session has expired")
-                customers = self._load_customer_access(cur, str(row[0]))
+                customers = self._load_customer_access(
+                    cur,
+                    str(row[0]),
+                    is_admin=bool(row[5]),
+                    default_customer_id=str(row[6]) if row[6] is not None else "",
+                )
                 if not any(customer.customer_id == str(row[1]) for customer in customers):
                     raise PermissionError("Session customer access is no longer valid")
                 cur.execute(
@@ -206,7 +217,48 @@ class AuthService:
         with psycopg.connect(self.connection_string, autocommit=True) as conn:
             conn.execute('DELETE FROM "UserSessions" WHERE "SessionTokenHash" = %s', (_hash_token(token),))
 
-    def _load_customer_access(self, cur: "psycopg.Cursor[Any]", user_id: str) -> list[CustomerAccess]:
+    def _load_customer_access(
+        self,
+        cur: "psycopg.Cursor[Any]",
+        user_id: str,
+        *,
+        is_admin: bool = False,
+        default_customer_id: str = "",
+    ) -> list[CustomerAccess]:
+        customers = self._fetch_customer_access(cur, user_id)
+        if customers:
+            return customers
+
+        if is_admin:
+            cur.execute(
+                """
+                INSERT INTO "UserCustomerAccess" ("UserId", "CustomerId")
+                SELECT %s, c."CustomerId"
+                FROM "Customers" c
+                WHERE c."IsActive" = 1
+                ON CONFLICT ("UserId", "CustomerId") DO NOTHING
+                """,
+                (user_id,),
+            )
+            return self._fetch_customer_access(cur, user_id)
+
+        if default_customer_id:
+            cur.execute(
+                """
+                INSERT INTO "UserCustomerAccess" ("UserId", "CustomerId")
+                SELECT %s, c."CustomerId"
+                FROM "Customers" c
+                WHERE c."CustomerId" = %s AND c."IsActive" = 1
+                ON CONFLICT ("UserId", "CustomerId") DO NOTHING
+                """,
+                (user_id, default_customer_id),
+            )
+            return self._fetch_customer_access(cur, user_id)
+
+        return customers
+
+    @staticmethod
+    def _fetch_customer_access(cur: "psycopg.Cursor[Any]", user_id: str) -> list[CustomerAccess]:
         cur.execute(
             """
             SELECT c."CustomerId", c."CustomerName"

@@ -84,6 +84,38 @@ def sync_customers(pg_conn: "psycopg.Connection") -> None:
             ON CONFLICT ("CustomerId") DO NOTHING
             """
         )
+        cur.execute(
+            """
+            INSERT INTO "AppUsers" ("UserId", "Email", "DisplayName", "PasswordHash", "IsAdmin", "DefaultCustomerId")
+            SELECT
+                'ops-' || lower(c."CustomerId"),
+                'ops+' || lower(c."CustomerId") || '@perishguard.local',
+                'Ops ' || c."CustomerId",
+                'pbkdf2_sha256$200000$pgdemo-customer$GZNkGBxaCFsxW5K5XzTaXn7G6xztrPFAt2vVOgG51nk=',
+                0,
+                c."CustomerId"
+            FROM "Customers" c
+            ON CONFLICT ("UserId") DO NOTHING
+            """
+        )
+        cur.execute(
+            """
+            INSERT INTO "UserCustomerAccess" ("UserId", "CustomerId")
+            SELECT u."UserId", c."CustomerId"
+            FROM "AppUsers" u
+            CROSS JOIN "Customers" c
+            WHERE u."UserId" = 'admin'
+            ON CONFLICT ("UserId", "CustomerId") DO NOTHING
+            """
+        )
+        cur.execute(
+            """
+            INSERT INTO "UserCustomerAccess" ("UserId", "CustomerId")
+            SELECT 'ops-' || lower(c."CustomerId"), c."CustomerId"
+            FROM "Customers" c
+            ON CONFLICT ("UserId", "CustomerId") DO NOTHING
+            """
+        )
 
 
 def main() -> int:
