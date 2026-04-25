@@ -146,6 +146,7 @@ Platform note: the Functions container is pinned to `linux/amd64`. The PostgreSQ
 - Connect to real Azure IoT Hub credentials.
 - Deploy PostgreSQL schema to the target environment.
 - Deploy model artifacts with the Function app.
+- Configure production Slack webhook and SMTP credentials for alert delivery.
 - Configure real Ollama and NemoClaw endpoints over Tailscale.
 - Add authentication and authorization for dashboard and HTTP Functions.
 - Add automated tests and CI.
@@ -157,3 +158,13 @@ Implemented:
 - `functions/ingest_reading/` exposes the prediction pipeline over HTTP at `/api/ingest-reading`.
 - `infra/seed_postgres_from_sqlite.py` loads the existing `perishguard.db` seed data into PostgreSQL.
 - `infra/synthetic_generator.py` emits realistic telemetry on a loop so the live pipeline can be demonstrated without IoT Hub.
+
+## Tier 2: Close The Loop
+
+Implemented:
+
+- Real Slack webhook and SMTP email alert delivery, with per-channel records in `"AlertDispatchLog"`.
+- `functions/ack_anomaly/` to acknowledge `"AnomalyEvents"` rows from the dashboard.
+- `functions/batch_detail/` to serve sensor history, prediction history, anomaly history, and alert history for a selected batch.
+- `functions/model_performance/` plus `vw_ModelPredictionTruth` and `vw_ModelPerformanceSummary` to compare latest predictions against `WasSpoiled`.
+- Dashboard support for anomaly acknowledgment, batch drill-down, alert log visibility, and model-performance reporting.

@@ -33,10 +33,13 @@ SCHEMA_CONTEXT = """
 Tables (PostgreSQL, identifiers are case-sensitive — always double-quote):
 - "SensorReadings"("CustomerId", "BatchId", "DeviceId", "ProductType", "ReadingAt", "Temperature", "Humidity", "Ethylene", "CO2", "NH3", "VOC", "ShockG", "LightLux")
 - "SpoilagePredictions"("CustomerId", "BatchId", "DeviceId", "ProductType", "ModelVersion", "PredictedAt", "SpoilageProbability", "RiskLevel", "EstimatedHoursLeft", "ConfidenceScore", "AvgTempLast1h", "MaxTempLast1h", "TempVariance24h", "ColdChainBreaks", "AlertSent", "AlertSentAt", "AlertChannel")
+- "AlertDispatchLog"("PredictionId", "CustomerId", "BatchId", "Channel", "DeliveryStatus", "Provider", "Target", "AlertText", "ErrorMessage", "AttemptedAt")
 - "AnomalyEvents"("CustomerId", "BatchId", "DeviceId", "SensorType", "ReadingValue", "BaselineMean", "BaselineStd", "DeviationScore", "AnomalyType", "Severity", "DetectedAt", "Acknowledged")
 - "SpoilageLabels"("CustomerId", "BatchId", "ProductType", "Origin", "Destination", "Carrier", "PackagingType", "SupplierId", "PackagedAt", "ExpiresAt", "ActualSpoilageAt", "WasSpoiled", "SpoilageType", "QualityScore")
 - "AnalyticsReports"("CustomerId", "ReportType", "GeneratedAt", "PeriodStart", "PeriodEnd", "ReportData", "Summary")
 - "vw_BatchRiskSummary"("CustomerId", "BatchId", "ProductType", "Origin", "Destination", "Carrier", "PackagingType", "SupplierId", "PackagedAt", "ExpiresAt", "LastPredictedAt", "SpoilageProbability", "RiskLevel", "EstimatedHoursLeft", "ConfidenceScore", "ColdChainBreaks", "AlertSent")
+- "vw_ModelPredictionTruth"("CustomerId", "BatchId", "ProductType", "LastPredictedAt", "SpoilageProbability", "RiskLevel", "EstimatedHoursLeft", "WasSpoiled", "PredictedSpoiled", "OutcomeLabel", "AbsoluteError")
+- "vw_ModelPerformanceSummary"("CustomerId", "ProductType", "EvaluatedBatchCount", "SpoiledBatchCount", "AverageSpoilageProbability", "AverageProbabilityWhenSpoiled", "AverageProbabilityWhenFresh", "MeanAbsoluteError", "TruePositiveCount", "FalsePositiveCount", "TrueNegativeCount", "FalseNegativeCount", "Accuracy")
 Rules:
 - Return exactly one PostgreSQL SELECT statement.
 - Use WHERE "CustomerId" = %s in every query.
@@ -84,6 +87,8 @@ class NaturalLanguageQueryService:
 
     def generate_sql(self, question: str) -> str:
         fallback = fallback_sql(question)
+        if is_prebuilt_question(question):
+            return fallback
         if requests is None or self.ollama_endpoint is None:
             return fallback
 
@@ -158,10 +163,17 @@ def validate_sql(sql: str) -> None:
 
 def fallback_sql(question: str) -> str:
     q = question.lower()
+    if "performance" in q or "accuracy" in q or "false positive" in q or "false negative" in q:
+        return (
+            'SELECT "ProductType", "EvaluatedBatchCount", "Accuracy", "MeanAbsoluteError", '
+            '"TruePositiveCount", "FalsePositiveCount", "TrueNegativeCount", "FalseNegativeCount" '
+            'FROM "vw_ModelPerformanceSummary" '
+            'WHERE "CustomerId" = %s ORDER BY "EvaluatedBatchCount" DESC LIMIT 50'
+        )
     if "anomal" in q:
         return (
-            'SELECT "DetectedAt", "BatchId", "DeviceId", "SensorType", "ReadingValue", '
-            '"AnomalyType", "Severity" FROM "AnomalyEvents" '
+            'SELECT "EventId", "DetectedAt", "BatchId", "DeviceId", "SensorType", "ReadingValue", '
+            '"AnomalyType", "Severity", "Acknowledged" FROM "AnomalyEvents" '
             'WHERE "CustomerId" = %s ORDER BY "DetectedAt" DESC LIMIT 50'
         )
     if "spoil" in q or "risk" in q or "critical" in q:
@@ -182,6 +194,15 @@ def strip_code_fence(text: str) -> str:
         text = re.sub(r"^```(?:sql)?", "", text, flags=re.IGNORECASE).strip()
         text = re.sub(r"```$", "", text).strip()
     return text
+
+
+def is_prebuilt_question(question: str) -> bool:
+    q = question.strip().lower()
+    return q in {
+        "show me the highest risk batches",
+        "show me the latest anomalies",
+        "show me the latest sensor readings",
+    }
 
 
 def template_summary(question: str, rows: list[dict[str, Any]]) -> str:

@@ -38,6 +38,7 @@ try:
     from functions.anomaly_detection.detector import AnomalyEvent, detect_anomalies
     from functions.nemoclaw_dispatch.dispatcher import (
         AlertDispatcher,
+        ChannelDelivery,
         DispatchResult,
         agent_tasks_for_prediction,
         build_alert_context,
@@ -46,6 +47,7 @@ except ModuleNotFoundError:
     from anomaly_detection.detector import AnomalyEvent, detect_anomalies
     from nemoclaw_dispatch.dispatcher import (
         AlertDispatcher,
+        ChannelDelivery,
         DispatchResult,
         agent_tasks_for_prediction,
         build_alert_context,
@@ -153,6 +155,7 @@ class PredictionService:
             result = self.predict_from_history(reading, history, anomalies)
             stored = insert_prediction(conn, result, history)
             dispatch_result = maybe_dispatch_alerts(conn, self.alert_dispatcher, stored.result, anomalies)
+            insert_alert_dispatch_logs(conn, stored, dispatch_result)
             if dispatch_result.alert_sent:
                 mark_alert_sent(conn, stored.prediction_id, dispatch_result.channel)
             conn.commit()
@@ -329,9 +332,25 @@ def maybe_dispatch_alerts(
 ) -> DispatchResult:
     context = build_alert_context(result, anomalies)
     if not agent_tasks_for_prediction(context):
-        return DispatchResult(False, False, None, None, [])
+        return DispatchResult(False, False, None, None, [], [])
     if alert_in_cooldown(conn, result.batch_id, dispatcher.cooldown_minutes):
-        return DispatchResult(True, False, "cooldown", None, [])
+        return DispatchResult(
+            True,
+            False,
+            "cooldown",
+            None,
+            [],
+            [
+                ChannelDelivery(
+                    channel="cooldown",
+                    status="suppressed",
+                    provider="system",
+                    target=result.batch_id,
+                    error="Alert suppressed by cooldown window",
+                    counts_as_alert=False,
+                )
+            ],
+        )
     return dispatcher.dispatch(context)
 
 
@@ -367,6 +386,37 @@ def mark_alert_sent(conn: "psycopg.Connection", prediction_id: int, channel: str
         """,
         (channel or "unknown", prediction_id),
     )
+
+
+def insert_alert_dispatch_logs(
+    conn: "psycopg.Connection",
+    stored: StoredPrediction,
+    dispatch_result: DispatchResult,
+) -> None:
+    if not dispatch_result.should_alert:
+        return
+    for delivery in dispatch_result.deliveries:
+        conn.execute(
+            """
+            INSERT INTO "AlertDispatchLog" (
+                "PredictionId", "BatchId", "CustomerId", "Channel", "DeliveryStatus",
+                "Provider", "Target", "AlertText", "ErrorMessage", "TaskCount"
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                stored.prediction_id,
+                stored.result.batch_id,
+                stored.result.customer_id,
+                delivery.channel,
+                delivery.status,
+                delivery.provider,
+                delivery.target,
+                dispatch_result.alert_text,
+                delivery.error,
+                len(dispatch_result.tasks),
+            ),
+        )
 
 
 def risk_from_probability(probability: float, thresholds: dict[str, float]) -> str:

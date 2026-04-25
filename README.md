@@ -13,6 +13,8 @@ Implemented locally:
 - Task 5: Weekly analytics report generation.
 - HTTP shims for demo traffic ingestion and on-demand analytics execution.
 - Bootstrap tooling to load seeded SQLite demo data into PostgreSQL.
+- Real Slack webhook and SMTP email alert delivery with per-channel alert audit logging.
+- Batch drill-down, anomaly acknowledgment, and model-performance dashboard views.
 - React + Vite + Recharts dashboard with Nginx proxying to Azure Functions.
 - Docker assets for PostgreSQL, Azurite, Azure Functions, dashboard, training, and demo tooling.
 
@@ -40,11 +42,12 @@ Validation completed:
 
 - `functions/predict_spoilage/` is the core prediction pipeline for IoT-triggered telemetry. `functions/ingest_reading/` exposes the same pipeline over HTTP for local demos and synthetic producers.
 - `functions/anomaly_detection/` runs deterministic checks on thresholds, statistical deviation, temperature rate-of-change, and shock/light triggers before prediction is finalized.
-- `functions/nemoclaw_dispatch/` converts prediction plus anomaly context into alert copy and optional NemoClaw task dispatch, with cooldown handling and template fallback.
+- `functions/nemoclaw_dispatch/` converts prediction plus anomaly context into alert copy, optional NemoClaw task dispatch, Slack/email delivery, and per-channel alert audit logging.
 - `functions/nl_query/` powers the dashboard cards and chat with customer-scoped PostgreSQL `SELECT` queries, statement timeouts, and deterministic fallbacks when Ollama is unavailable.
+- `functions/ack_anomaly/`, `functions/batch_detail/`, and `functions/model_performance/` expose operational write/read APIs for acknowledgment, batch drill-down, and prediction-vs-truth reporting.
 - `functions/analytics_batch/` generates weekly JSON reports from shipment labels and latest risk summaries, while `functions/run_analytics/` exposes the same batch service through `POST /api/run-analytics`.
 - `infra/seed_postgres_from_sqlite.py` loads the seeded SQLite demo dataset into PostgreSQL, and `infra/synthetic_generator.py` emits realistic telemetry into `/api/ingest-reading`.
-- `dashboard/` now renders risk, telemetry, anomalies, and chat from live API responses instead of embedded mock data.
+- `dashboard/` now renders live risk, telemetry, anomaly acknowledgment, batch drill-down, model performance, and chat views from API responses.
 
 ## Layout
 
@@ -62,6 +65,9 @@ PerishGuard/
 │   ├── anomaly_detection/           # Task 2 detector
 │   ├── nemoclaw_dispatch/           # Task 3 alert dispatcher
 │   ├── nl_query/                    # Task 4 HTTP query endpoint
+│   ├── ack_anomaly/                 # HTTP acknowledgment endpoint
+│   ├── batch_detail/                # HTTP batch drill-down endpoint
+│   ├── model_performance/           # HTTP model-performance endpoint
 │   ├── analytics_batch/             # Task 5 timer endpoint
 │   └── run_analytics/               # HTTP trigger for on-demand analytics
 ├── dashboard/                       # React dashboard and Nginx packaging
@@ -100,6 +106,8 @@ docker compose --profile tools run --rm demo-tools python infra/synthetic_genera
 ```
 
 Dashboard URL in Docker: `http://localhost:8081`.
+
+Alert channels are optional and configured through `.env` with `SLACK_WEBHOOK_URL` and SMTP settings such as `SMTP_HOST`, `ALERT_EMAIL_FROM`, and `ALERT_EMAIL_TO`.
 
 ## Documentation
 

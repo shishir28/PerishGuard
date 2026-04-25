@@ -20,25 +20,35 @@ predict_spoilage Azure Function
   └─ calls nemoclaw_dispatch when alert thresholds are met
        ├─ Ollama alert text, optional
        ├─ NemoClaw agent tasks, optional
-       └─ deterministic fallback when endpoints are unavailable
+       ├─ Slack webhook delivery, optional
+       ├─ SMTP email delivery, optional
+       └─ AlertDispatchLog audit trail
 
 PostgreSQL
   ├─ SensorReadings
   ├─ SpoilageLabels
   ├─ SpoilagePredictions
   ├─ AnomalyEvents
+  ├─ AlertDispatchLog
   ├─ AnalyticsReports
-  └─ vw_BatchRiskSummary
+  ├─ vw_BatchRiskSummary
+  ├─ vw_ModelPredictionTruth
+  └─ vw_ModelPerformanceSummary
 
 HTTP Functions
+  ├─ ack_anomaly: operator acknowledgment write API
+  ├─ batch_detail: sensor/prediction/alert drill-down read API
   ├─ ingest_reading: HTTP shim into the prediction pipeline
+  ├─ model_performance: prediction-vs-truth performance API
   ├─ nl_query: guarded text-to-SQL over customer-scoped data
   └─ run_analytics: on-demand analytics batch execution
 
 React dashboard
   ├─ live risk queue
   ├─ live telemetry trend
-  ├─ live anomaly feed
+  ├─ live anomaly feed with acknowledgment
+  ├─ selected-batch drill-down
+  ├─ model performance panel
   └─ live natural-language query panel
 ```
 
@@ -51,16 +61,17 @@ React dashboard
 5. The Function loads ordered batch history and builds the 24-feature vector from `training/features.py`.
 6. ONNX models produce spoilage probability and estimated hours left.
 7. A prediction row is written to `"SpoilagePredictions"`.
-8. Alert dispatch runs when risk thresholds match agent routing rules and the batch is outside cooldown.
-9. The dashboard reads risk, anomaly, and telemetry views through `nl_query`, and operators can trigger weekly analytics through `run_analytics`.
+8. Alert dispatch runs when risk thresholds match agent routing rules and the batch is outside cooldown; successful Slack/email deliveries update prediction alert status and every channel attempt is logged in `AlertDispatchLog`.
+9. The dashboard reads risk, anomaly, and telemetry views through `nl_query`, uses dedicated HTTP APIs for acknowledgment and drill-down, and can trigger weekly analytics through `run_analytics`.
 
 ## Codebase Shape
 
 - `predict_spoilage` is the runtime orchestrator and owns the hot path from telemetry event to persisted prediction.
 - `ingest_reading` is a thin HTTP wrapper around the same prediction service used by the Event Hub trigger so demos can run without IoT Hub.
 - `anomaly_detection` is a pure rules module with no storage side effects; persistence happens in `predict_spoilage`.
-- `nemoclaw_dispatch` is isolated from inference so alert generation and agent routing can degrade independently through deterministic fallback.
+- `nemoclaw_dispatch` is isolated from inference so alert generation, agent routing, and real channel delivery can degrade independently through deterministic fallback and per-channel logging.
 - `nl_query` drives both the free-form dashboard chat and the fixed dashboard cards from PostgreSQL.
+- `ack_anomaly`, `batch_detail`, and `model_performance` are narrow operational APIs for dashboard workflows that should not go through text-to-SQL.
 - `analytics_batch` is a timer-driven reporting job, and `run_analytics` exposes the same service through an HTTP trigger for demos and manual runs.
 - `training/` remains intentionally separate from the production path; it uses SQLite locally, but the deployed application stack reads and writes PostgreSQL.
 
@@ -98,7 +109,7 @@ Agent routing:
 | Quality | `HIGH` or `CRITICAL` | Inspection and compliance note |
 | Notify | `MEDIUM`, `HIGH`, or `CRITICAL` | Dashboard, email, and SMS copy |
 
-If Ollama or NemoClaw are unavailable, deterministic fallback text and task metadata are used.
+If Ollama or NemoClaw are unavailable, deterministic fallback text and task metadata are used. Slack webhook and SMTP email delivery are optional and controlled through environment variables.
 
 ## Natural-Language Queries
 
@@ -112,7 +123,7 @@ Guardrails:
 - Query timeout is 10 seconds.
 - Results are capped to 50 rows.
 
-When `OLLAMA_ENDPOINT` is missing, deterministic fallback queries handle common risk, anomaly, and telemetry questions against curated PostgreSQL tables and views.
+When `OLLAMA_ENDPOINT` is missing, deterministic fallback queries handle common risk, anomaly, telemetry, and performance questions against curated PostgreSQL tables and views.
 
 ## Business Analytics
 

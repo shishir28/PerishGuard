@@ -28,6 +28,7 @@ Defaults:
 
 - `DISABLE_IOT_TRIGGER=true`, so the Functions app can start locally without live IoT Hub settings.
 - `OLLAMA_ENDPOINT` and `NEMOCLAW_ENDPOINT` are blank, so deterministic fallbacks are used.
+- Slack/email alert delivery settings are blank, so delivery attempts are logged as skipped until configured.
 - PostgreSQL uses the local credentials from `.env`.
 - `demo-tools` targets Postgres at `postgres:5432` and the HTTP ingest shim at `http://functions/api/ingest-reading`.
 
@@ -60,7 +61,10 @@ Open:
 The dashboard proxies `/api/*` to the Functions container. For example:
 
 - `/api/nl-query` -> `nl_query`
+- `/api/anomalies/{eventId}/ack` -> `ack_anomaly`
+- `/api/batches/{batchId}` -> `batch_detail`
 - `/api/ingest-reading` -> `ingest_reading`
+- `/api/model-performance` -> `model_performance`
 - `/api/run-analytics` -> `run_analytics`
 
 ## Bootstrap Demo Data
@@ -135,6 +139,21 @@ ALERT_COOLDOWN_MINUTES=30
 ```
 
 If they are blank or unavailable, the application uses deterministic fallback text and task metadata.
+
+Optional real delivery channels:
+
+```bash
+SLACK_WEBHOOK_URL=https://hooks.slack.com/services/<team>/<channel>/<token>
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USERNAME=<smtp-user>
+SMTP_PASSWORD=<smtp-password>
+SMTP_USE_TLS=true
+SMTP_USE_SSL=false
+ALERT_EMAIL_FROM=perishguard@example.com
+ALERT_EMAIL_TO=ops@example.com,quality@example.com
+ALERT_EMAIL_SUBJECT_PREFIX=[PerishGuard]
+```
 
 ## Stop
 

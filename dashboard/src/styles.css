@@ -21,6 +21,10 @@ input {
   font: inherit;
 }
 
+button {
+  border: 0;
+}
+
 main {
   width: min(1440px, 100%);
   margin: 0 auto;
@@ -29,13 +33,16 @@ main {
 
 .topbar,
 .sectionHeader,
-.metrics,
+.customer,
+.detailHeaderMeta,
+.detailMetrics,
+.detailLists,
+.performanceGrid,
 .workspace,
-.lowerGrid,
-.riskRow,
-.anomaly,
 .askForm,
-.customer {
+.anomaly,
+.logRow,
+.tableRow {
   display: flex;
 }
 
@@ -51,7 +58,6 @@ main {
   color: #607167;
   font-size: 0.78rem;
   font-weight: 800;
-  letter-spacing: 0;
   text-transform: uppercase;
 }
 
@@ -64,12 +70,10 @@ p {
 h1 {
   font-size: clamp(2rem, 4vw, 4.5rem);
   line-height: 0.95;
-  letter-spacing: 0;
 }
 
 h2 {
   font-size: 1.08rem;
-  letter-spacing: 0;
 }
 
 svg {
@@ -85,7 +89,8 @@ svg {
 
 .customer,
 .iconButton,
-.askForm button {
+.askForm button,
+.ghostButton {
   align-items: center;
   justify-content: center;
   border: 1px solid #c9d7ce;
@@ -101,6 +106,12 @@ svg {
   font-weight: 800;
 }
 
+.customer input {
+  border: 0;
+  outline: 0;
+  min-width: 110px;
+}
+
 .metrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -111,7 +122,9 @@ svg {
 .metric,
 .primary,
 .chartPanel,
-.panel {
+.panel,
+.detailSection,
+.performanceSection {
   background: #ffffff;
   border: 1px solid #d8e2da;
   border-radius: 8px;
@@ -140,7 +153,8 @@ svg {
   color: #b17624;
 }
 
-.metric span {
+.metric span,
+.miniMetric span {
   color: #607167;
   font-weight: 700;
 }
@@ -187,20 +201,51 @@ svg {
   cursor: pointer;
 }
 
+.ghostButton {
+  min-width: 108px;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ghostButton.done {
+  background: #e3f4ea;
+  color: #246847;
+  border-color: #cce6d7;
+}
+
+.ghostButton:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
 .riskTable,
-.anomalyList {
+.anomalyList,
+.logList,
+.tableList {
   display: grid;
   gap: 10px;
 }
 
 .riskRow {
+  width: 100%;
   min-height: 72px;
+  display: flex;
   align-items: center;
   gap: 14px;
   padding: 12px;
   border: 1px solid #e1e9e3;
   border-radius: 8px;
   background: #fbfcfa;
+  cursor: pointer;
+  text-align: left;
+}
+
+.riskRow.active {
+  border-color: #2c7a5a;
+  box-shadow: inset 0 0 0 1px #2c7a5a;
 }
 
 .riskRow > div:first-child {
@@ -209,19 +254,23 @@ svg {
 }
 
 .riskRow strong,
-.anomaly strong {
+.anomaly strong,
+.logRow strong,
+.tableRow strong {
   display: block;
 }
 
 .riskRow span,
 .anomaly span,
 .answer span,
-.insightStrip small {
+.logRow span,
+.tableRow span {
   color: #607167;
   font-size: 0.9rem;
 }
 
-.riskBadge {
+.riskBadge,
+.statusPill {
   min-width: 86px;
   padding: 7px 9px;
   border-radius: 6px;
@@ -230,23 +279,33 @@ svg {
   font-weight: 900;
 }
 
-.riskBadge.critical {
+.riskBadge.critical,
+.statusPill.true_positive,
+.statusPill.sent {
   background: #ffe4dc;
   color: #a6321e;
 }
 
 .riskBadge.high,
-.riskBadge.warning {
+.riskBadge.warning,
+.statusPill.false_positive,
+.statusPill.failed {
   background: #fff0d8;
   color: #8a520f;
 }
 
-.riskBadge.medium {
+.riskBadge.medium,
+.statusPill.false_negative,
+.statusPill.suppressed {
   background: #e8f1ff;
   color: #285f9f;
 }
 
-.riskBadge.low {
+.riskBadge.low,
+.riskBadge.info,
+.riskBadge.true_negative,
+.statusPill.true_negative,
+.statusPill.skipped {
   background: #e3f4ea;
   color: #246847;
 }
@@ -256,7 +315,8 @@ svg {
 }
 
 .probability > span,
-.hours {
+.hours,
+.miniMetric strong {
   font-weight: 900;
 }
 
@@ -282,11 +342,14 @@ svg {
 
 .lowerGrid {
   display: grid;
-  grid-template-columns: 0.8fr 1.1fr 1fr;
+  grid-template-columns: 0.95fr 1fr 1fr;
   gap: 18px;
+  margin-bottom: 18px;
 }
 
-.panel {
+.panel,
+.detailSection,
+.performanceSection {
   min-width: 0;
   padding: 20px;
 }
@@ -299,39 +362,16 @@ svg {
   border-bottom: 1px solid #e1e9e3;
 }
 
-.anomaly:last-child {
+.anomaly:last-child,
+.logRow:last-child,
+.tableRow:last-child {
   border-bottom: 0;
   padding-bottom: 0;
 }
 
-.insightStrip {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.insightStrip div {
-  min-height: 92px;
-  padding: 12px;
-  border-radius: 8px;
-  background: #f4f7f2;
-}
-
-.insightStrip span,
-.insightStrip strong,
-.insightStrip small {
-  display: block;
-}
-
-.insightStrip span {
-  color: #607167;
-  font-size: 0.76rem;
-  font-weight: 900;
-  text-transform: uppercase;
-}
-
-.insightStrip strong {
-  margin: 6px 0;
+.anomalyContent {
+  min-width: 0;
+  flex: 1;
 }
 
 .chatPanel {
@@ -372,14 +412,88 @@ svg {
   line-height: 1.5;
 }
 
-@media (max-width: 1080px) {
-  main {
-    padding: 20px;
+.detailSection,
+.performanceSection {
+  margin-bottom: 18px;
+}
+
+.detailHeaderMeta {
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.detailMetrics,
+.matrixGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.miniMetric {
+  min-height: 88px;
+  padding: 14px;
+  border-radius: 8px;
+  background: #f4f7f2;
+  border: 1px solid #e1e9e3;
+  display: grid;
+  align-content: space-between;
+}
+
+.miniMetric strong {
+  font-size: 1.4rem;
+}
+
+.detailGrid,
+.detailLists,
+.performanceGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+.logRow,
+.tableRow {
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 56px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #e1e9e3;
+}
+
+.logRow > div,
+.tableRow > *:first-child {
+  min-width: 0;
+}
+
+.tableRow {
+  flex-wrap: wrap;
+}
+
+.empty,
+.errorText {
+  padding: 6px 0;
+}
+
+.errorText {
+  color: #a6321e;
+}
+
+@media (max-width: 1180px) {
+  .metrics,
+  .detailMetrics,
+  .matrixGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .metrics,
-  .lowerGrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .lowerGrid,
+  .detailGrid,
+  .detailLists,
+  .performanceGrid {
+    grid-template-columns: 1fr;
   }
 
   .workspace {
@@ -402,8 +516,9 @@ svg {
   }
 
   .metrics,
-  .lowerGrid,
-  .insightStrip {
+  .detailMetrics,
+  .matrixGrid,
+  .lowerGrid {
     grid-template-columns: 1fr;
   }
 
@@ -416,11 +531,16 @@ svg {
   .hours {
     width: auto;
   }
-}
 
-.empty { color: #6a7770; font-size: 14px; padding: 12px 4px; }
-.errorText { color: #c9472b; font-size: 14px; padding: 8px 4px; }
-.customer input {
-  background: transparent; border: none; color: inherit; width: 80px; outline: none;
+  .logRow,
+  .tableRow,
+  .anomaly {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .ghostButton,
+  .statusPill {
+    width: 100%;
+  }
 }
-.customer button { background: transparent; border: none; color: inherit; cursor: pointer; padding: 0 4px; }
